@@ -220,8 +220,27 @@
     };
     return info;
   }
-  function currentOSOptions(selectedOSId){
-    const lista = (W.J?.os || []).filter(o => String(o.status || '').toLowerCase() !== 'cancelado').sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')));
+  function osEmAtendimentoNF(os){
+    const st = normalizeTextNF([os?.status, os?.etapa].filter(Boolean).join(' '));
+    if(!st) return true;
+    return !/(cancelad|entreg|finaliz|encerrad|recusad|arquivad|excluid)/.test(st);
+  }
+  function osBuscaConfereNF(os, busca){
+    const termo = normalizeTextNF(busca || '');
+    const placaBusca = normalizePlateNF(busca || '');
+    if(!termo && !placaBusca) return true;
+    const placa = placaDaOSNF(os);
+    if(placaBusca && placa && (placa.includes(placaBusca) || placaBusca.includes(placa))) return true;
+    return normalizeTextNF(textoBuscaOSNF(os)).includes(termo);
+  }
+  function listaOSDestinoNF(selectedOSId, busca){
+    return (W.J?.os || [])
+      .filter(o => osEmAtendimentoNF(o) || String(o.id || '') === String(selectedOSId || ''))
+      .filter(o => osBuscaConfereNF(o, busca))
+      .sort(ordenarOSDestinoNF);
+  }
+  function currentOSOptions(selectedOSId, busca){
+    const lista = listaOSDestinoNF(selectedOSId, busca);
     return lista.map(o => {
       const v = (W.J?.veiculos || []).find(x => x.id === o.veiculoId) || {};
       const c = (W.J?.clientes || []).find(x => x.id === o.clienteId) || {};
@@ -230,12 +249,12 @@
       const data = brDate((o.data || o.createdAt || o.updatedAt || '').slice(0,10));
       const status = o.status || 'em atendimento';
       const label = `${placa} — ${veic} — ${c.nome || o.cliente || 'Cliente'} — O.S. #${String(o.id||'').slice(-6).toUpperCase()} — ${status}${data ? ' — ' + data : ''}`;
-      return `<option value="${esc(o.id)}" data-placa="${esc(placa)}">${esc(label)}</option>`;
+      return `<option value="${esc(o.id)}" data-placa="${esc(placa)}" ${String(selectedOSId||'')===String(o.id)?'selected':''}>${esc(label)}</option>`;
     }).join('');
   }
   function rowTemplate(item){
     const i = item || {};
-    const options = currentOSOptions(i.osId || '');
+    const options = currentOSOptions(i.osId || '', i.vinculo || i.placa || '');
     const destino = i.destino || 'estoque';
     return `
       <div class="nf-real-row" style="border:1px solid var(--border);border-radius:4px;padding:10px;background:rgba(0,0,0,.08);display:grid;gap:8px;">
@@ -267,7 +286,12 @@
             <option value="uso_interno" ${destino==='uso_interno'?'selected':''}>Uso interno</option>
             <option value="outro" ${destino==='outro'?'selected':''}>Outro</option>
           </select></div>
-          <div class="nf-os-wrap" style="display:${destino==='os'?'block':'none'}"><label class="j-label">Selecionar O.S. em atendimento</label><select class="j-select nf-os-select"><option value="">Escolha pela placa / O.S. / cliente...</option>${options}</select></div>
+          <div class="nf-os-wrap" style="display:${destino==='os'?'block':'none'}">
+            <label class="j-label">Selecionar O.S. em atendimento</label>
+            <input class="j-input nf-os-busca" value="${esc(i.vinculo || i.placa || '')}" placeholder="Buscar placa / O.S. / cliente em atendimento" oninput="window.nfProFiltrarOS(this)" style="margin-bottom:6px;">
+            <select class="j-select nf-os-select" onchange="window.nfProSelecionouOS(this)"><option value="">Escolha pela placa / O.S. / cliente...</option>${options}</select>
+            <small class="nf-os-alert" style="display:block;margin-top:4px;color:var(--muted);font-family:var(--fm);font-size:.62rem;">Lista limitada a O.S. em atendimento.</small>
+          </div>
           <div><label class="j-label">Placa/finalidade/observação</label><input class="j-input nf-vinculo" value="${esc(i.vinculo||'')}" placeholder="Ex.: ABC1234, garantia, uso interno..."></div>
         </div>
         <div style="font-family:var(--fm);font-size:.64rem;color:var(--muted);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;" class="nf-real-tributos">
@@ -280,6 +304,38 @@
     const row = sel.closest('.nf-real-row');
     const wrap = row?.querySelector('.nf-os-wrap');
     if(wrap) wrap.style.display = sel.value === 'os' ? 'block' : 'none';
+  };
+  W.nfProFiltrarOS = function(input){
+    const row = input?.closest?.('.nf-real-row');
+    const sel = row?.querySelector('.nf-os-select');
+    if(!sel) return;
+    const old = sel.value;
+    const lista = listaOSDestinoNF(old, input.value || '');
+    const vinc = row.querySelector('.nf-vinculo');
+    if(vinc && input.value && (!vinc.value || normalizePlateNF(vinc.value) === normalizePlateNF(input.value))) vinc.value = String(input.value || '').toUpperCase();
+    sel.innerHTML = `<option value="">Escolha pela placa / O.S. / cliente...</option>` + lista.map(o => {
+      const v = (W.J?.veiculos || []).find(x => x.id === o.veiculoId) || {};
+      const c = (W.J?.clientes || []).find(x => x.id === o.clienteId) || {};
+      const placa = (o.placa || v.placa || 'S/PLACA').toUpperCase();
+      const veic = [v.marca, v.modelo || o.veiculo].filter(Boolean).join(' ') || 'Veiculo';
+      const data = brDate((o.data || o.createdAt || o.updatedAt || '').slice(0,10));
+      const status = o.status || 'em atendimento';
+      const label = `${placa} - ${veic} - ${c.nome || o.cliente || 'Cliente'} - O.S. #${String(o.id||'').slice(-6).toUpperCase()} - ${status}${data ? ' - ' + data : ''}`;
+      return `<option value="${esc(o.id)}" data-placa="${esc(placa)}" ${String(old||'')===String(o.id)?'selected':''}>${esc(label)}</option>`;
+    }).join('');
+    if(old && Array.from(sel.options).some(opt => opt.value === old)) sel.value = old;
+    const alert = row.querySelector('.nf-os-alert');
+    if(alert) alert.textContent = lista.length ? `${lista.length} O.S. em atendimento encontrada(s).` : 'Nenhuma O.S. em atendimento encontrada para esta busca.';
+  };
+  W.nfProSelecionouOS = function(sel){
+    const row = sel?.closest?.('.nf-real-row');
+    const os = (W.J?.os || []).find(o => String(o.id || '') === String(sel?.value || ''));
+    if(!row || !os) return;
+    const placa = placaDaOSNF(os);
+    const busca = row.querySelector('.nf-os-busca');
+    if(busca) busca.value = placa || busca.value || '';
+    const vinc = row.querySelector('.nf-vinculo');
+    if(vinc) vinc.value = [placa, 'OS ' + String(os.id || '').slice(-6).toUpperCase()].filter(Boolean).join(' / ');
   };
   function renderParcels(dups){
     let box = $('nfParcelasBox');
@@ -628,7 +684,7 @@
   }
   async function resolverOSDestinoNF(item){
     if (item.osId) return carregarOSNF(item.osId);
-    const lista = (W.J?.os || []).slice();
+    const lista = (W.J?.os || []).filter(osEmAtendimentoNF);
     const placa = normalizePlateNF(item.placa || item.vinculo || '');
     if (placa) {
       const porPlaca = lista

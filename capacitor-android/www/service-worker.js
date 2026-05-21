@@ -12,7 +12,7 @@
  *
  * Powered by thIAguinho Soluções Digitais
  */
-const CACHE_VERSION = 'thiaguinho-operacional-fiscal-financeiro-20260521-50';
+const CACHE_VERSION = 'thiaguinho-operacional-fiscal-financeiro-20260521-51';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -73,7 +73,8 @@ const PRECACHE_URLS_RAW = [
   './scripts/devtools/TESTE_DEVTOOLS_CLIENTE.js',
   './scripts/devtools/TESTE_DEVTOOLS_CLIENTEOFICIAL.js',
   './scripts/devtools/TESTE_DEVTOOLS_VALORIA_PRECIA.js',
-  './scripts/devtools/GERAR_TENANT_TESTE_300_FLUXO.js'
+  './scripts/devtools/GERAR_TENANT_TESTE_300_FLUXO.js',
+  './scripts/devtools/GERAR_TIAO_MOTOS_DEMO_3_MESES.js'
 ];
 const SW_BASE = self.location.pathname.includes('/js/service-worker.js') ? '../' : './';
 const PRECACHE_URLS = PRECACHE_URLS_RAW.map(url => url === './' ? SW_BASE : SW_BASE + url.replace(/^\.\//, ''));
