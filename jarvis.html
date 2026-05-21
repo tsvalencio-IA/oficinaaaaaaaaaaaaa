@@ -2521,14 +2521,64 @@ window.escutarMensagens = function() {
 J.chatEquipeAtivo = null;
 J.chatEquipeMsgs = [];
 
+function chatEquipeMeuFid(){ return J.fid || sessionStorage.getItem('j_fid') || ''; }
+function chatEquipeSouEquipe(){ return !!chatEquipeMeuFid() || sessionStorage.getItem('j_actor_type') === 'equipe'; }
+function chatEquipeMeuId(){ return chatEquipeSouEquipe() ? chatEquipeMeuFid() : J.tid; }
+function chatEquipeAdminContato(){ return { id:'admin', nome:J.tnome || 'Admin da oficina', cargo:'Admin / Gestor', tipoContato:'admin' }; }
+function chatEquipeEscArg(v){ return String(v || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function chatEquipeIdSet(id){
+  const s = new Set([String(id || '')]);
+  if(String(id || '') === 'admin' || String(id || '') === String(J.tid || '')) {
+    s.add('admin');
+    if(J.tid) s.add(String(J.tid));
+  }
+  return s;
+}
+function chatEquipeNomePorId(id){
+  const sid = String(id || '');
+  if(sid === 'admin' || sid === String(J.tid || '')) return J.tnome || 'Admin';
+  const f = (J.equipe || []).find(x => String(x.id || '') === sid);
+  return f?.nome || 'Equipe';
+}
+function chatEquipeContatos(){
+  const meuFid = chatEquipeMeuFid();
+  const equipe = (J.equipe || []).filter(f => !meuFid || String(f.id || '') !== String(meuFid));
+  if(chatEquipeSouEquipe()) return [chatEquipeAdminContato()].concat(equipe);
+  return equipe;
+}
+function chatEquipeMsgsDoContato(contatoId){
+  const meuIds = chatEquipeIdSet(chatEquipeMeuId());
+  const contatoIds = chatEquipeIdSet(contatoId);
+  return (J.chatEquipeMsgs || []).filter(m => {
+    const de = String(m.de || '');
+    const para = String(m.para || '');
+    if(chatEquipeSouEquipe()) {
+      return (meuIds.has(de) && contatoIds.has(para)) || (contatoIds.has(de) && meuIds.has(para));
+    }
+    return contatoIds.has(de) || contatoIds.has(para);
+  });
+}
+function chatEquipeUnreadContato(contatoId){
+  const meus = chatEquipeIdSet(chatEquipeMeuId());
+  return chatEquipeMsgsDoContato(contatoId).filter(m => {
+    const de = String(m.de || '');
+    if(meus.has(de)) return false;
+    return chatEquipeSouEquipe() ? !m.lidaEquipe : !m.lidaAdmin;
+  }).length;
+}
+function chatEquipeParaAtual(){
+  if(chatEquipeSouEquipe() && (String(J.chatEquipeAtivo || '') === 'admin' || String(J.chatEquipeAtivo || '') === String(J.tid || ''))) return 'admin';
+  return J.chatEquipeAtivo;
+}
+function chatEquipeSenderAtual(){ return chatEquipeSouEquipe() ? 'equipe' : 'admin'; }
+
 window.escutarChatEquipe = function() {
   db.collection('chat_equipe').where('tenantId','==',J.tid).onSnapshot(snap => {
     J.chatEquipeMsgs = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.ts||0)-(b.ts||0));
     window.renderChatEquipeLista();
     if (J.chatEquipeAtivo) window.renderChatEquipeMsgs(J.chatEquipeAtivo);
     // Badge: mensagens de equipe não lidas pelo admin
-    const meuFid = J.fid || sessionStorage.getItem('j_fid') || '';
-    const nLidas = J.chatEquipeMsgs.filter(m => m.sender==='equipe' && !m.lidaAdmin && String(m.de || '') !== String(meuFid)).length;
+    const nLidas = chatEquipeContatos().reduce((total, c) => total + chatEquipeUnreadContato(c.id), 0);
     const badge = $('chatEquipeBadge');
     if(badge){ if(nLidas>0){badge.style.display='block';badge.innerText=nLidas;}else badge.style.display='none'; }
   });
@@ -2537,18 +2587,20 @@ window.escutarChatEquipe = function() {
 window.renderChatEquipeLista = function() {
   const lista = $('chatEquipeLista');
   if (!lista) return;
-  const meuFid = J.fid || sessionStorage.getItem('j_fid') || '';
-  const equipeVisivel = (J.equipe || []).filter(f => !meuFid || String(f.id || '') !== String(meuFid));
-  if (meuFid && String(J.chatEquipeAtivo || '') === String(meuFid)) J.chatEquipeAtivo = null;
-  lista.innerHTML = equipeVisivel.map(f => {
-    const msgs = J.chatEquipeMsgs.filter(m => m.de === f.id || m.para === f.id);
+  const contatos = chatEquipeContatos();
+  if (J.chatEquipeAtivo && !contatos.some(c => String(c.id) === String(J.chatEquipeAtivo))) J.chatEquipeAtivo = null;
+  lista.innerHTML = contatos.map(f => {
+    const msgs = chatEquipeMsgsDoContato(f.id);
     const ultima = msgs[msgs.length - 1];
-    const nLidas = msgs.filter(m => m.sender === 'equipe' && !m.lidaAdmin && String(m.de || '') !== String(meuFid)).length;
-    return `<div class="chat-item ${J.chatEquipeAtivo===f.id?'active':''}" onclick="window.abrirChatEquipe('${f.id}','${f.nome}')">
-      <div class="chat-item-name">${f.nome} ${nLidas>0?`<span class="chat-unread">${nLidas}</span>`:''}</div>
-      <div class="chat-item-last">${f.cargo||'Equipe'} · ${ultima?.msg?.substring(0,30)||'Sem mensagens'}</div>
+    const nLidas = chatEquipeUnreadContato(f.id);
+    const nome = f.nome || 'Contato';
+    const cargo = f.cargo || (f.tipoContato === 'admin' ? 'Admin / Gestor' : 'Equipe');
+    const preview = ultima?.msg ? String(ultima.msg).substring(0,30) : 'Sem mensagens';
+    return `<div class="chat-item ${String(J.chatEquipeAtivo)===String(f.id)?'active':''}" onclick="window.abrirChatEquipe('${chatEquipeEscArg(f.id)}','${chatEquipeEscArg(nome)}')">
+      <div class="chat-item-name">${_escHtmlJ?_escHtmlJ(nome):nome} ${nLidas>0?`<span class="chat-unread">${nLidas}</span>`:''}</div>
+      <div class="chat-item-last">${_escHtmlJ?_escHtmlJ(cargo):cargo} - ${_escHtmlJ?_escHtmlJ(preview):preview}</div>
     </div>`;
-  }).join('') || '<div style="padding:20px;color:var(--muted);font-size:0.75rem;text-align:center;">Nenhum membro</div>';
+  }).join('') || '<div style="padding:20px;color:var(--muted);font-size:0.75rem;text-align:center;">Nenhum contato de equipe</div>';
 };
 
 window.abrirChatEquipe = function(fid, nome) {
@@ -2557,27 +2609,27 @@ window.abrirChatEquipe = function(fid, nome) {
   if (head) head.innerHTML = '<button type="button" class="chat-back-btn" onclick="window.fecharChatMobile(\'chatequipe\')" aria-label="Voltar para lista">‹</button>CHAT: '+(_escHtmlJ?_escHtmlJ(nome):nome).toUpperCase();
   const foot = $('chatEquipeFoot');
   if (foot) foot.style.display = 'flex';
-  // No mobile: marca o layout como "conversa aberta"
   const layoutEq = document.querySelector('#s-chatequipe .chat-layout');
   if(layoutEq) layoutEq.classList.add('chat-open');
   window.renderChatEquipeMsgs(fid);
-  // Marcar como lidas
+  const meus = chatEquipeIdSet(chatEquipeMeuId());
   J.chatEquipeMsgs
-    .filter(m => m.de === fid && m.sender === 'equipe' && !m.lidaAdmin)
-    .forEach(m => db.collection('chat_equipe').doc(m.id).update({lidaAdmin:true}).catch(()=>{}));
+    .filter(m => !meus.has(String(m.de || '')) && chatEquipeMsgsDoContato(fid).some(x => x.id === m.id))
+    .forEach(m => db.collection('chat_equipe').doc(m.id).update(chatEquipeSouEquipe() ? {lidaEquipe:true} : {lidaAdmin:true}).catch(()=>{}));
 };
 
 window.renderChatEquipeMsgs = function(fid) {
   const box = $('chatEquipeMsgs');
   if (!box) return;
-  const msgs = J.chatEquipeMsgs.filter(m => m.de === fid || m.para === fid);
+  const meus = chatEquipeIdSet(chatEquipeMeuId());
+  const msgs = chatEquipeMsgsDoContato(fid);
   box.innerHTML = msgs.map(m => {
-    const lado = m.sender === 'admin' ? 'admin' : 'cliente';
-    const nome = m.sender === 'admin' ? (m.autorNome || 'Admin') : (J.equipe.find(f=>f.id===m.de)?.nome || 'Equipe');
+    const lado = meus.has(String(m.de || '')) ? 'admin' : 'cliente';
+    const nome = m.autorNome || chatEquipeNomePorId(m.de);
     const ts = m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
     const conteudo = window.formatarMidiaChatJ ? window.formatarMidiaChatJ(m.msg) : (m.msg||'').replace(/\n/g,'<br>');
     return `<div class="chat-msg ${lado}">
-      <strong style="font-size:0.65rem;color:${lado==='admin'?'var(--cyan)':'var(--muted2)'}">${nome}</strong><br>
+      <strong style="font-size:0.65rem;color:${lado==='admin'?'var(--cyan)':'var(--muted2)'}">${_escHtmlJ?_escHtmlJ(nome):nome}</strong><br>
       ${conteudo}
       <div class="ts">${ts}</div>
     </div>`;
@@ -2589,18 +2641,19 @@ window.enviarChatEquipe = async function() {
   const msg = $v('chatEquipeInput');
   if (!msg || !J.chatEquipeAtivo) return;
   const autor = autorChatJarvis();
+  const souEquipe = chatEquipeSouEquipe();
   await db.collection('chat_equipe').add({
     tenantId: J.tid,
     de: autor.de,
-    para: J.chatEquipeAtivo,
-    sender: autor.sender,
+    para: chatEquipeParaAtual(),
+    sender: chatEquipeSenderAtual(),
     autorTipo: autor.autorTipo,
     autorId: autor.autorId,
     autorNome: autor.autorNome,
     autorCargo: autor.autorCargo,
     msg,
-    lidaEquipe: false,
-    lidaAdmin: true,
+    lidaEquipe: souEquipe,
+    lidaAdmin: !souEquipe,
     ts: Date.now()
   });
   if ($('chatEquipeInput')) $('chatEquipeInput').value = '';
@@ -3493,13 +3546,14 @@ window.togglePTT = async function(btnId, destino){
         const payload = '[AUDIO]' + data.secure_url;
         const dest = window._pttStateJ.destino;
         const autor = autorChatJarvis();
+        const souEquipeChat = chatEquipeSouEquipe();
 
         if(dest === 'equipe'){
           await db.collection('chat_equipe').add({
             tenantId: J.tid,
             de: autor.de,
-            para: J.chatEquipeAtivo,
-            sender: autor.sender,
+            para: chatEquipeParaAtual(),
+            sender: chatEquipeSenderAtual(),
             autorTipo: autor.autorTipo,
             autorId: autor.autorId,
             autorNome: autor.autorNome,
@@ -3507,7 +3561,7 @@ window.togglePTT = async function(btnId, destino){
             msg: payload,
             tipo: 'audio',
             url: data.secure_url,
-            lidaEquipe: false, lidaAdmin: true,
+            lidaEquipe: souEquipeChat, lidaAdmin: !souEquipeChat,
             ts: Date.now()
           });
         } else {
@@ -3660,11 +3714,12 @@ window.enviarArquivoChatEquipe = async function(input){
     else             msgTexto = '[ARQUIVO]'+ data.secure_url;
 
     const autor = autorChatJarvis();
+    const souEquipeChat = chatEquipeSouEquipe();
     await db.collection('chat_equipe').add({
       tenantId: J.tid,
       de: autor.de,
-      para: J.chatEquipeAtivo,
-      sender: autor.sender,
+      para: chatEquipeParaAtual(),
+      sender: chatEquipeSenderAtual(),
       autorTipo: autor.autorTipo,
       autorId: autor.autorId,
       autorNome: autor.autorNome,
@@ -3673,7 +3728,7 @@ window.enviarArquivoChatEquipe = async function(input){
       tipo: tipo,
       url: data.secure_url,
       nomeArquivo: file.name,
-      lidaEquipe: false, lidaAdmin: true,
+      lidaEquipe: souEquipeChat, lidaAdmin: !souEquipeChat,
       ts: Date.now()
     });
 

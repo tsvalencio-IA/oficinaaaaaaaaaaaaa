@@ -543,17 +543,38 @@
           custo: p.custo || p.valorUnitario || 0
         });
       });
+      const groups = gruposHistorico(os);
+      ['pecAprov','pecNao'].forEach(k => (groups[k] || []).forEach(p => {
+        if (!itemTemCodigoPeca(p, codigo)) return;
+        add('OS/ORCAMENTO', {
+          codigo: p.codigoFornecedor || p.codigo || p.codigoComercial || p.oem || termoRaw,
+          desc: p.desc || p.descricao || '',
+          marca: p.marca || '',
+          placa: os.placa || veic.placa || p.placa || '',
+          prefixo: veic.prefixo || os.prefixo || '',
+          veiculo: veic.modelo || os.veiculo || os.modelo || '',
+          cliente: cli.nome || os.cliente || '',
+          osId: os.id || '',
+          nfId: p.nfId || '',
+          nfNumero: p.nfNumero || p.nf || p.notaFiscal || '',
+          fornecedor: p.fornecedor || p.fornecedorNome || '',
+          dataCompra: p.dataCompra || p.dataNF || os.updatedAt || os.createdAt || '',
+          qtd: p.qtd || p.quantidade || 1,
+          baixa: p.estoqueBaixadoAutomatico,
+          custo: p.custo || p.valorUnitario || 0
+        });
+      }));
     });
     if (!rows.length) {
       return `<div style="color:var(--muted);font-family:var(--fm);font-size:.8rem;padding:10px 0;">Nenhum uso interno encontrado para o codigo ${esc(termoRaw)}.</div>`;
     }
     rows.sort((a,b)=>String(b.dataCompra||'').localeCompare(String(a.dataCompra||'')));
-    return `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:8px;">${rows.length} uso(s) encontrado(s) para o codigo <b>${esc(termoRaw)}</b>. Exibindo somente a peÃ§a pesquisada.</div>
+    return `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:8px;">${rows.length} uso(s) encontrado(s) para o codigo <b>${esc(termoRaw)}</b>. Exibindo somente a peça pesquisada.</div>
       <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Codigo / peÃ§a</th><th>Usado em</th><th>O.S.</th><th>NF / fornecedor</th><th>Compra</th><th>Qtd / baixa</th></tr></thead><tbody>
       ${rows.map(r => `<tr>
         <td><b>${esc(r.codigo || termoRaw)}</b><br>${esc(r.desc || '-')}<br><small>${esc(r.marca || '')}</small></td>
         <td><b>${esc(r.placa || '-')}</b> ${r.prefixo ? '<span class="op-chip">'+esc(r.prefixo)+'</span>' : ''}<br>${esc(r.veiculo || '-')}<br><small>${esc(r.cliente || '')}</small></td>
-        <td>${r.osId ? `<button class="btn-ghost" onclick="window.editarOS && window.editarOS('${esc(r.osId)}')">OS #${esc(String(r.osId).slice(-6).toUpperCase())}</button>` : '-'}</td>
+        <td>${r.osId ? `<button class="btn-primary" onclick="window.editarOS && window.editarOS('${esc(r.osId)}')">ABRIR O.S. #${esc(String(r.osId).slice(-6).toUpperCase())}</button>` : '-'}</td>
         <td>NF ${esc(r.nfNumero || '-')}<br><small>${esc(r.fornecedor || '-')}</small></td>
         <td>${esc(String(r.dataCompra || '-').slice(0,10))}<br><small>${esc(r.origem || '')}</small></td>
         <td>${esc(r.qtd || 1)}<br><small>${r.baixa ? 'baixado automaticamente' : 'sem baixa automatica registrada'}</small></td>
@@ -650,6 +671,27 @@
           custo: p.custo || p.valorUnitario || 0
         });
       });
+      const groups = gruposHistorico(os);
+      ['pecAprov','pecNao'].forEach(k => (groups[k] || []).forEach(p => {
+        if (!itemTemCodigoPeca(p, codigo)) return;
+        add('OS/ORCAMENTO', {
+          codigo: p.codigoFornecedor || p.codigo || p.codigoComercial || p.oem || termoRaw,
+          desc: p.desc || p.descricao || '',
+          marca: p.marca || '',
+          placa: os.placa || veic.placa || p.placa || '',
+          prefixo: veic.prefixo || os.prefixo || '',
+          veiculo: veic.modelo || os.veiculo || os.modelo || '',
+          cliente: cli.nome || os.cliente || '',
+          osId: os.id || '',
+          nfId: p.nfId || '',
+          nfNumero: p.nfNumero || p.nf || p.notaFiscal || '',
+          fornecedor: p.fornecedor || p.fornecedorNome || '',
+          dataCompra: p.dataCompra || p.dataNF || os.updatedAt || os.createdAt || '',
+          qtd: p.qtd || p.quantidade || 1,
+          baixa: p.estoqueBaixadoAutomatico,
+          custo: p.custo || p.valorUnitario || 0
+        });
+      }));
     });
     if (!rows.length) {
       return `<div style="color:var(--muted);font-family:var(--fm);font-size:.8rem;padding:10px 0;">Nenhum movimento encontrado para o codigo ${esc(termoRaw)}.</div>`;
@@ -681,8 +723,13 @@
       const el = byId(resultadoId);
       if (!el) return;
       if (!placa && !termo) { el.innerHTML = '<div style="color:var(--muted);font-size:.8rem;">Digite placa e/ou peca/servico.</div>'; return; }
-      if (secret177() && termoRaw && termoPareceCodigoPeca(termoRaw)) {
-        el.innerHTML = renderKardexPecaCodigo(codigoPecaNormalizado(termoRaw), termoRaw, placa);
+      if (termoRaw && termoPareceCodigoPeca(termoRaw)) {
+        const codigo = codigoPecaNormalizado(termoRaw);
+        const rastreio = renderRastreioPecaCodigo(codigo, termoRaw, placa);
+        const kardex = secret177()
+          ? `<details class="op-card hist-os-card"><summary style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><b style="font-family:var(--fd);color:var(--danger);">KARDEX INTERNO *177 DO CODIGO ${esc(termoRaw)}</b><span class="hist-os-chevron">›</span></summary><div style="margin-top:10px;">${renderKardexPecaCodigo(codigo, termoRaw, placa)}</div></details>`
+          : '';
+        el.innerHTML = rastreio + kardex;
         return;
       }
       const hits = (J().os || []).filter(o => {

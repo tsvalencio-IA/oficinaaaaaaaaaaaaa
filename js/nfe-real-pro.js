@@ -450,6 +450,36 @@
       Natureza: <b>${esc(nfe.natureza)}</b> Â· Protocolo: <b>${esc(nfe.protocolo)}</b> Â· Status: <b>${esc(nfe.statusAutorizacao)} ${esc(nfe.motivoAutorizacao)}</b><br>
       Produtos: <b>R$ ${fmtBR(nfe.totais.vProd)}</b> Â· Desc.: <b>R$ ${fmtBR(nfe.totais.vDesc)}</b> Â· IPI: <b>R$ ${fmtBR(nfe.totais.vIPI)}</b> Â· Total NF: <b>R$ ${fmtBR(nfe.totais.vNF)}</b>`;
   }
+  function renderDevolucaoBox(nfe){
+    let box = $('nfDevolucaoBox');
+    if(!box){
+      box = D.createElement('div'); box.id='nfDevolucaoBox';
+      box.style.cssText='border:1px solid rgba(255,184,0,.55);background:rgba(255,184,0,.08);border-radius:4px;padding:10px;margin:10px 0;font-family:var(--fm);font-size:.72rem;line-height:1.55;';
+      $('containerItensNF')?.parentElement?.insertAdjacentElement('beforebegin', box);
+    }
+    if(!isNFDevolucao(nfe, nfe?.itens || [])){ box.innerHTML=''; box.style.display='none'; return; }
+    const refs = Array.isArray(nfe?.referencias) ? nfe.referencias : [];
+    const candidatas = (W.J?.notasFiscaisEntrada || []).filter(n => {
+      if(String(n.tipo || '').toLowerCase().includes('devolucao') || n.excluidaAuditada) return false;
+      if(refs.length && refs.includes(n.chave)) return true;
+      const cnpjA = onlyDigits(n.fornecedorSnapshot?.cnpj || n.fornecedorCNPJ || n.cnpj || '');
+      const cnpjB = onlyDigits(nfe?.fornecedor?.cnpj || '');
+      return cnpjA && cnpjB && cnpjA === cnpjB;
+    });
+    const original = candidatas.find(n => refs.includes(n.chave)) || candidatas[0] || null;
+    box.style.display='block';
+    box.innerHTML = `
+      <b style="color:var(--warn)">NF DE DEVOLUCAO / ESTORNO DE COMPRA</b><br>
+      ${refs.length ? `Chave(s) referenciada(s) no XML: <b>${esc(refs.join(', '))}</b><br>` : 'XML sem chave referenciada. Selecione manualmente a NF original.<br>'}
+      <div class="form-row cols-2" style="margin-top:8px;">
+        <div class="form-group"><label class="j-label">NF original para abater</label><select class="j-select" id="nfDevolucaoOriginalId">
+          <option value="">Selecione a NF original</option>
+          ${candidatas.map(n => `<option value="${esc(n.id)}" ${original && n.id === original.id ? 'selected' : ''}>NF ${esc(n.numero || 's/n')} - ${esc(n.fornecedorSnapshot?.nome || n.fornecedorNome || '')} - R$ ${fmtBR(n.totalNF || n.totalItens || 0)}</option>`).join('')}
+        </select></div>
+        <div class="form-group"><label class="j-label">Motivo/observacao</label><input class="j-input" id="nfDevolucaoMotivo" value="Devolucao de mercadoria ao fornecedor"></div>
+      </div>
+      <div style="margin-top:8px;color:var(--muted);">Ao salvar, o sistema grava a NF de devolucao, marca os itens devolvidos na NF original, baixa estoque/vinculos quando encontrados e cria credito/abatimento financeiro auditado.</div>`;
+  }
   function cnpjFornecedorNF(nfe){
     return onlyDigits(nfe?.fornecedor?.cnpj || nfe?.fornecedorCNPJ || nfe?.cnpj || '');
   }
@@ -533,7 +563,7 @@
     if($('nfVenc')) $('nfVenc').onchange = gerarParcelasManuais;
     mostrarAgrupamentoPeriodoNF(false);
     if(typeof W.popularSelects === 'function') W.popularSelects();
-    renderFiscalResumo(null); renderParcels([]); W.adicionarItemNF(); W.checkPgtoNF();
+    renderFiscalResumo(null); renderDevolucaoBox(null); renderParcels([]); W.adicionarItemNF(); W.checkPgtoNF();
   };
   W.lerXMLNFe = function(event){
     const file = event?.target?.files?.[0]; if(!file) return;
@@ -552,6 +582,7 @@
         preencherFornecedorTemporario(nfe.fornecedor);
         if($('containerItensNF')) $('containerItensNF').innerHTML = nfe.itens.map(rowTemplate).join('');
         renderFiscalResumo(nfe);
+        renderDevolucaoBox(nfe);
         if(nfe.cobranca.duplicatas.length){
           if($('nfPgtoForma')) $('nfPgtoForma').value = 'Boleto';
           if($('nfParcelas')) { if(!$('nfParcelas').querySelector(`option[value="${nfe.cobranca.duplicatas.length}"]`)) $('nfParcelas').insertAdjacentHTML('beforeend', `<option value="${nfe.cobranca.duplicatas.length}">${nfe.cobranca.duplicatas.length}x</option>`); $('nfParcelas').value = String(nfe.cobranca.duplicatas.length); }
@@ -892,6 +923,17 @@
   }
   async function localizarNFOriginalDevolucao(nfe){
     const refs = Array.isArray(nfe?.referencias) ? nfe.referencias : [];
+    const selecionada = D.getElementById('nfDevolucaoOriginalId')?.value || '';
+    if (selecionada) {
+      let n = (W.J?.notasFiscaisEntrada || []).find(x => String(x.id) === String(selecionada));
+      if (!n && W.db) {
+        try {
+          const snap = await W.db.collection('notas_fiscais_entrada').doc(selecionada).get();
+          if (snap.exists) n = { id:snap.id, ...snap.data() };
+        } catch (_) {}
+      }
+      if (n) return n;
+    }
     let original = null;
     if (refs.length) original = (W.J?.notasFiscaisEntrada || []).find(n => refs.includes(n.chave));
     if (!original && refs.length && W.db && W.J?.tid) {
@@ -939,7 +981,7 @@
       if(W.toast) W.toast('NF de devolucao exige vinculo com a NF original. Operacao bloqueada ate selecionar a original.', 'warn');
       return;
     }
-    const motivo = prompt('Justificativa/observacao da devolucao:', 'Devolucao de mercadoria ao fornecedor') || 'Devolucao de mercadoria ao fornecedor';
+    const motivo = D.getElementById('nfDevolucaoMotivo')?.value || prompt('Justificativa/observacao da devolucao:', 'Devolucao de mercadoria ao fornecedor') || 'Devolucao de mercadoria ao fornecedor';
     const batch = W.db.batch();
     const nfRef = W.db.collection('notas_fiscais_entrada').doc();
     const agora = new Date().toISOString();
@@ -957,18 +999,49 @@
     nfPayload.updatedAt = agora;
     batch.set(nfRef, nfPayload);
     const vinculosOrig = (W.J?.nfItensVinculos || []).filter(v => String(v.nfId || '') === String(original.id || '') || (original.chave && v.chave === original.chave));
+    const devolvidosResumo = [];
+    const itensOriginalAtualizados = (Array.isArray(original.itens) ? original.itens : []).map(oi => {
+      const dev = itens.find(i => itemNFMatch(oi, i));
+      if (!dev) return oi;
+      const qtdDev = Number(dev.quantidade || dev.qtd || 0) || 0;
+      const qtdAnt = Number(oi.quantidadeDevolvida || oi.qtdDevolvida || 0) || 0;
+      const qtdOrig = Number(oi.quantidade || oi.qtd || 0) || 0;
+      const totalDev = qtdAnt + qtdDev;
+      devolvidosResumo.push({ codigo:dev.codigo || dev.codigoFornecedor || oi.codigo || oi.codigoFornecedor || '', desc:dev.descricao || dev.desc || oi.descricao || oi.desc || '', qtd:qtdDev });
+      return Object.assign({}, oi, {
+        quantidadeDevolvida: totalDev,
+        qtdDevolvida: totalDev,
+        saldoAposDevolucao: Math.max(0, qtdOrig - totalDev),
+        statusDevolucao: qtdOrig && totalDev >= qtdOrig ? 'Devolvido total' : 'Devolvido parcial',
+        ultimaNfDevolucaoId: nfRef.id,
+        ultimaNfDevolucaoNumero: nfPayload.numero || ''
+      });
+    });
+    if (original.id) {
+      batch.update(W.db.collection('notas_fiscais_entrada').doc(original.id), {
+        itens: itensOriginalAtualizados,
+        possuiDevolucao: true,
+        statusDevolucao: devolvidosResumo.length >= (original.itens || []).length ? 'Devolvido total/parcial' : 'Devolvido parcial',
+        ultimaNfDevolucaoId: nfRef.id,
+        ultimaNfDevolucaoNumero: nfPayload.numero || '',
+        ultimaDevolucaoEm: agora,
+        updatedAt: agora
+      });
+    }
     itens.forEach(item => {
       const v = vinculosOrig.find(x => itemNFMatch(x, item));
-      const est = v?.estoqueId ? (W.J?.estoque || []).find(p => String(p.id) === String(v.estoqueId)) : null;
+      const estFallback = !v ? (W.J?.estoque || []).find(p => itemNFMatch(p, item)) : null;
+      const estoqueIdDev = v?.estoqueId || estFallback?.id || '';
+      const est = estoqueIdDev ? (W.J?.estoque || []).find(p => String(p.id) === String(estoqueIdDev)) : null;
       const qtd = Number(item.quantidade || item.qtd || v?.qtd || 0) || 0;
       if (v?.id) batch.update(W.db.collection('nf_itens_vinculos').doc(v.id), { devolvido:true, devolvidoEm:agora, nfDevolucaoId:nfRef.id, motivoDevolucao:motivo, updatedAt:agora });
-      if (v?.estoqueId && est && !v.estoqueBaixadoAutomatico) batch.update(W.db.collection('estoqueItems').doc(v.estoqueId), { qtd:Math.max(0, (Number(est.qtd)||0) - qtd), updatedAt:agora });
-      batch.set(W.db.collection('estoque_movimentos').doc(), cleanFirestoreNF({ tenantId:W.J.tid, estoqueId:v?.estoqueId || '', tipo:'devolucao_nf_fornecedor', nfId:nfRef.id, nfNumero:nfPayload.numero, nfOriginalId:original.id || '', nfOriginalNumero:original.numero || '', codigo:item.codigo || item.codigoFornecedor || v?.codigo || '', desc:item.descricao || item.desc || v?.desc || '', qtd:-Math.abs(qtd), custo:item.valorUnitario || item.custo || v?.custo || 0, total:item.valorLiquido || item.total || v?.total || 0, osId:v?.osId || item.osId || '', placa:v?.placa || item.placa || '', motivo, createdAt:agora, usuario:W.J?.nome || 'Sistema' }));
+      if (estoqueIdDev && est && !v?.estoqueBaixadoAutomatico) batch.update(W.db.collection('estoqueItems').doc(estoqueIdDev), { qtd:Math.max(0, (Number(est.qtd)||0) - qtd), updatedAt:agora });
+      batch.set(W.db.collection('estoque_movimentos').doc(), cleanFirestoreNF({ tenantId:W.J.tid, estoqueId:estoqueIdDev, tipo:'devolucao_nf_fornecedor', nfId:nfRef.id, nfNumero:nfPayload.numero, nfOriginalId:original.id || '', nfOriginalNumero:original.numero || '', codigo:item.codigo || item.codigoFornecedor || v?.codigo || '', desc:item.descricao || item.desc || v?.desc || '', qtd:-Math.abs(qtd), custo:item.valorUnitario || item.custo || v?.custo || 0, total:item.valorLiquido || item.total || v?.total || 0, osId:v?.osId || item.osId || '', placa:v?.placa || item.placa || '', motivo, createdAt:agora, usuario:W.J?.nome || 'Sistema' }));
     });
     const removidasOS = removerPecasReaisDevolucaoBatch(batch, original, itens, nfPayload, motivo);
     const totalNF = Number(nfPayload.totalNF || nfPayload.totalItens || 0) || 0;
     batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'Entrada', status:'Pendente', desc:`Credito/abatimento devolucao NF ${nfPayload.numero || 's/n'} da NF ${original.numero || original.id || ''}`, valor:totalNF, pgto:'Abatimento devolucao', venc:isoToday(), notaFiscalId:nfRef.id, nfOriginalId:original.id || '', fornecedorId, createdAt:agora });
-    batch.set(W.db.collection('lixeira_auditoria').doc(), { tenantId:W.J.tid, modulo:'ESTOQUE/NF', acao:`NF de devolucao ${nfPayload.numero || nfRef.id} vinculada a NF ${original.numero || original.id}`, usuario:W.J?.nome || 'Sistema', entidade:'notas_fiscais_entrada', entidadeId:nfRef.id, motivo, itens, removidasOS, ts:agora });
+    batch.set(W.db.collection('lixeira_auditoria').doc(), { tenantId:W.J.tid, modulo:'ESTOQUE/NF', acao:`NF de devolucao ${nfPayload.numero || nfRef.id} vinculada a NF ${original.numero || original.id}`, usuario:W.J?.nome || 'Sistema', entidade:'notas_fiscais_entrada', entidadeId:nfRef.id, motivo, itens, devolvidosResumo, removidasOS, ts:agora });
     await batch.commit();
     if(W.toast) W.toast(`NF de devolucao registrada. ${removidasOS} peca(s) removida(s) de O.S. quando aplicavel.`, 'ok');
     if(typeof W.fecharModal === 'function') W.fecharModal('modalNF');
