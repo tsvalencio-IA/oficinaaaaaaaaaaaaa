@@ -2527,7 +2527,8 @@ window.escutarChatEquipe = function() {
     window.renderChatEquipeLista();
     if (J.chatEquipeAtivo) window.renderChatEquipeMsgs(J.chatEquipeAtivo);
     // Badge: mensagens de equipe não lidas pelo admin
-    const nLidas = J.chatEquipeMsgs.filter(m => m.sender==='equipe' && !m.lidaAdmin).length;
+    const meuFid = J.fid || sessionStorage.getItem('j_fid') || '';
+    const nLidas = J.chatEquipeMsgs.filter(m => m.sender==='equipe' && !m.lidaAdmin && String(m.de || '') !== String(meuFid)).length;
     const badge = $('chatEquipeBadge');
     if(badge){ if(nLidas>0){badge.style.display='block';badge.innerText=nLidas;}else badge.style.display='none'; }
   });
@@ -2536,10 +2537,13 @@ window.escutarChatEquipe = function() {
 window.renderChatEquipeLista = function() {
   const lista = $('chatEquipeLista');
   if (!lista) return;
-  lista.innerHTML = J.equipe.map(f => {
+  const meuFid = J.fid || sessionStorage.getItem('j_fid') || '';
+  const equipeVisivel = (J.equipe || []).filter(f => !meuFid || String(f.id || '') !== String(meuFid));
+  if (meuFid && String(J.chatEquipeAtivo || '') === String(meuFid)) J.chatEquipeAtivo = null;
+  lista.innerHTML = equipeVisivel.map(f => {
     const msgs = J.chatEquipeMsgs.filter(m => m.de === f.id || m.para === f.id);
     const ultima = msgs[msgs.length - 1];
-    const nLidas = msgs.filter(m => m.sender === 'equipe' && !m.lidaAdmin).length;
+    const nLidas = msgs.filter(m => m.sender === 'equipe' && !m.lidaAdmin && String(m.de || '') !== String(meuFid)).length;
     return `<div class="chat-item ${J.chatEquipeAtivo===f.id?'active':''}" onclick="window.abrirChatEquipe('${f.id}','${f.nome}')">
       <div class="chat-item-name">${f.nome} ${nLidas>0?`<span class="chat-unread">${nLidas}</span>`:''}</div>
       <div class="chat-item-last">${f.cargo||'Equipe'} · ${ultima?.msg?.substring(0,30)||'Sem mensagens'}</div>
