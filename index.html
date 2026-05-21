@@ -451,6 +451,7 @@ async function autenticar() {
         j_role:         acessoJarvis ? 'admin' : cargoFuncionario,
         j_cargo:        cargoFuncionario,
         j_cargo_acesso: acessoJarvis ? 'jarvis' : 'equipe',
+        j_actor_type:   'equipe',
         j_nome:         dF.nome,
         j_fid:          docF.id,
         j_comissao:     String(dF.comissao || 0),

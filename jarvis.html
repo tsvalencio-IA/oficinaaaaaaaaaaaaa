@@ -140,6 +140,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .j-card-title{font-family:var(--fd);font-size:1rem;font-weight:700;letter-spacing:1px;display:flex;align-items:center;gap:8px;}
 .j-card-title svg{width:16px;height:16px;fill:var(--cyan);}
 .j-card-body{padding:18px; overflow-x: auto;}
+.j-card.j-minimized .j-card-body{display:none!important;}
+.j-collapse-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.j-collapse-toggle{min-width:36px;height:32px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;}
+.j-collapsible.minimized .j-collapsible-body{display:none!important;}
+.j-collapsible-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
 
 .kanban-wrap{display:grid;grid-template-columns:repeat(7,minmax(132px,1fr));gap:10px;overflow-x:visible;padding-bottom:8px;align-items:flex-start;}
 .k-col{background:var(--surf2);border:1px solid var(--border);border-radius:3px;min-width:0;width:auto;display:flex;flex-direction:column;max-height:calc(100vh - 220px);}
@@ -804,9 +809,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="j-card">
           <div class="j-card-header">
             <div class="j-card-title">INVENTÁRIO DE PEÇAS</div>
-            <div style="display:flex;gap:8px;">
+            <div class="j-collapse-tools">
               <button class="btn-success" onclick="abrirModal('modalNF');window.prepNF()">+ ENTRADA NF</button>
               <button class="btn-primary" onclick="abrirModal('modalPeca');prepPeca('add')">+ NOVA PEÇA</button>
+              <button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir inventário">−</button>
             </div>
           </div>
           <div class="j-card-body" style="padding:0;">
@@ -817,7 +823,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           </div>
         </div>
         <div class="j-card">
-          <div class="j-card-header"><div class="j-card-title">FORNECEDORES</div><button class="btn-primary" onclick="abrirModal('modalFornec')">+ NOVO</button></div>
+          <div class="j-card-header"><div class="j-card-title">FORNECEDORES</div><div class="j-collapse-tools"><button class="btn-primary" onclick="abrirModal('modalFornec')">+ NOVO</button><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir fornecedores">−</button></div></div>
           <div class="j-card-body" style="padding:0;"><table class="j-table"><thead><tr><th>Razão Social</th><th>Segmento</th><th>Ações</th></tr></thead><tbody id="tbFornec"></tbody></table></div>
         </div>
       </div>
@@ -1692,10 +1698,12 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div class="form-group"><label class="j-label">Número NF</label><input class="j-input" id="nfNumero" placeholder="00001" style="font-family:var(--fm);"></div>
       <div class="form-group"><label class="j-label">Data NF</label><input type="date" class="j-input" id="nfData"></div>
     </div>
-    <div style="background:var(--surf3);border:1px solid var(--border);border-radius:3px;padding:14px;margin-bottom:14px;">
-      <div style="font-family:var(--fd);font-weight:700;margin-bottom:10px;">ITENS DA NOTA FISCAL</div>
-      <div id="containerItensNF" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
-      <button class="btn-outline" onclick="window.adicionarItemNF()">+ ADICIONAR ITEM MANUAL</button>
+    <div class="j-collapsible" style="background:var(--surf3);border:1px solid var(--border);border-radius:3px;padding:14px;margin-bottom:14px;">
+      <div class="j-collapsible-head"><div style="font-family:var(--fd);font-weight:700;">ITENS DA NOTA FISCAL</div><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir itens da NF">−</button></div>
+      <div class="j-collapsible-body">
+        <div id="containerItensNF" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
+        <button class="btn-outline" onclick="window.adicionarItemNF()">+ ADICIONAR ITEM MANUAL</button>
+      </div>
     </div>
     <div class="form-row cols-3">
       <div class="form-group"><label class="j-label">Forma de Pagamento</label>
@@ -1913,10 +1921,18 @@ const J = window.J;
 const $ = id => document.getElementById(id);
 const $v = id => $(id) ? $(id).value.trim() : '';
 
+window.toggleJarvisCollapse = function(btn){
+  const box = btn?.closest?.('.j-card,.j-collapsible');
+  if(!box) return;
+  const minimized = box.classList.toggle(box.classList.contains('j-card') ? 'j-minimized' : 'minimized');
+  if(btn) btn.textContent = minimized ? '+' : '−';
+};
+
 // SESSÃO
 J.tid = sessionStorage.getItem('j_tid');
 J.role = sessionStorage.getItem('j_role');
 J.cargo = sessionStorage.getItem('j_cargo') || '';
+J.fid = sessionStorage.getItem('j_fid') || '';
 J.nome = sessionStorage.getItem('j_nome');
 J.adminEmail = sessionStorage.getItem('j_admin_email') || '';
 J.tnome = sessionStorage.getItem('j_tnome');
@@ -1924,6 +1940,26 @@ J.nicho = sessionStorage.getItem('j_nicho') || 'carros';
 J.cloudName = sessionStorage.getItem('j_cloud_name') || 'dmuvm1o6m';
 J.cloudPreset = sessionStorage.getItem('j_cloud_preset') || 'evolution';
 try { J.oficina = JSON.parse(sessionStorage.getItem('j_oficina') || '{}') || {}; } catch(e) { J.oficina = {}; }
+
+function _normCargoJarvis(v){
+  return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+
+function autorChatJarvis(){
+  const cargo = J.cargo || sessionStorage.getItem('j_cargo') || '';
+  const fid = J.fid || sessionStorage.getItem('j_fid') || '';
+  const actorType = sessionStorage.getItem('j_actor_type') || '';
+  const cargoNorm = _normCargoJarvis(cargo);
+  const veioDaEquipe = actorType === 'equipe' || (!!fid && !['dono','proprietario','owner'].includes(cargoNorm));
+  return {
+    de: veioDaEquipe ? fid : J.tid,
+    sender: 'admin',
+    autorTipo: veioDaEquipe ? 'equipe' : 'admin',
+    autorId: veioDaEquipe ? fid : J.tid,
+    autorNome: veioDaEquipe ? (J.nome || 'Equipe') : (J.tnome || J.nome || 'Admin'),
+    autorCargo: veioDaEquipe ? (cargo || 'equipe') : 'admin'
+  };
+}
 
 if(!J.tid) window.location.replace('index.html');
 
@@ -2533,7 +2569,7 @@ window.renderChatEquipeMsgs = function(fid) {
   const msgs = J.chatEquipeMsgs.filter(m => m.de === fid || m.para === fid);
   box.innerHTML = msgs.map(m => {
     const lado = m.sender === 'admin' ? 'admin' : 'cliente';
-    const nome = m.sender === 'admin' ? 'Admin' : (J.equipe.find(f=>f.id===m.de)?.nome || 'Equipe');
+    const nome = m.sender === 'admin' ? (m.autorNome || 'Admin') : (J.equipe.find(f=>f.id===m.de)?.nome || 'Equipe');
     const ts = m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
     const conteudo = window.formatarMidiaChatJ ? window.formatarMidiaChatJ(m.msg) : (m.msg||'').replace(/\n/g,'<br>');
     return `<div class="chat-msg ${lado}">
@@ -2548,11 +2584,16 @@ window.renderChatEquipeMsgs = function(fid) {
 window.enviarChatEquipe = async function() {
   const msg = $v('chatEquipeInput');
   if (!msg || !J.chatEquipeAtivo) return;
+  const autor = autorChatJarvis();
   await db.collection('chat_equipe').add({
     tenantId: J.tid,
-    de: J.tid,
+    de: autor.de,
     para: J.chatEquipeAtivo,
-    sender: 'admin',
+    sender: autor.sender,
+    autorTipo: autor.autorTipo,
+    autorId: autor.autorId,
+    autorNome: autor.autorNome,
+    autorCargo: autor.autorCargo,
     msg,
     lidaEquipe: false,
     lidaAdmin: true,
@@ -3292,13 +3333,15 @@ window.renderChatMsgs = function(cid) {
     const ts = m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
     const lado = m.sender==='admin' ? 'admin' : 'cliente';
     const conteudo = window.formatarMidiaChatJ ? window.formatarMidiaChatJ(m.msg) : (m.msg || '').replace(/\n/g,'<br>');
-    return `<div class="chat-msg ${lado}">${conteudo}<div class="ts">${ts}</div></div>`;
+    const autor = m.sender==='admin' && m.autorNome ? `<strong style="display:block;font-size:0.65rem;color:var(--cyan);margin-bottom:4px;">${_escHtmlJ(m.autorNome)}${m.autorCargo?` <span style="color:var(--muted2)">(${_escHtmlJ(m.autorCargo)})</span>`:''}</strong>` : '';
+    return `<div class="chat-msg ${lado}">${autor}${conteudo}<div class="ts">${ts}</div></div>`;
   }).join('');
   $('chatMsgs').scrollTop=$('chatMsgs').scrollHeight;
 };
 window.enviarChat = async function(txt) {
   const msg= txt || $v('chatInput'); if(!msg||!J.chatAtivo) return;
-  await db.collection('mensagens').add({tenantId:J.tid,clienteId:J.chatAtivo,sender:'admin',msg,lidaCliente:false,ts:Date.now()});
+  const autor = autorChatJarvis();
+  await db.collection('mensagens').add({tenantId:J.tid,clienteId:J.chatAtivo,sender:'admin',autorTipo:autor.autorTipo,autorId:autor.autorId,autorNome:autor.autorNome,autorCargo:autor.autorCargo,msg,lidaCliente:false,ts:Date.now()});
   if($('chatInput')) $('chatInput').value='';
 }
 document.getElementById('chatInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')window.enviarChat();});
@@ -3445,13 +3488,18 @@ window.togglePTT = async function(btnId, destino){
 
         const payload = '[AUDIO]' + data.secure_url;
         const dest = window._pttStateJ.destino;
+        const autor = autorChatJarvis();
 
         if(dest === 'equipe'){
           await db.collection('chat_equipe').add({
             tenantId: J.tid,
-            de: J.tid,
+            de: autor.de,
             para: J.chatEquipeAtivo,
-            sender: 'admin',
+            sender: autor.sender,
+            autorTipo: autor.autorTipo,
+            autorId: autor.autorId,
+            autorNome: autor.autorNome,
+            autorCargo: autor.autorCargo,
             msg: payload,
             tipo: 'audio',
             url: data.secure_url,
@@ -3463,6 +3511,10 @@ window.togglePTT = async function(btnId, destino){
             tenantId: J.tid,
             clienteId: J.chatAtivo,
             sender: 'admin',
+            autorTipo: autor.autorTipo,
+            autorId: autor.autorId,
+            autorNome: autor.autorNome,
+            autorCargo: autor.autorCargo,
             msg: payload,
             tipo: 'audio',
             url: data.secure_url,
@@ -3549,10 +3601,15 @@ window.enviarArquivoChat = async function(input){
     else if(isVideo) msgTexto = '[VIDEO]'  + data.secure_url;
     else             msgTexto = '[ARQUIVO]'+ data.secure_url;
 
+    const autor = autorChatJarvis();
     await db.collection('mensagens').add({
       tenantId: J.tid,
       clienteId: J.chatAtivo,
       sender: 'admin',
+      autorTipo: autor.autorTipo,
+      autorId: autor.autorId,
+      autorNome: autor.autorNome,
+      autorCargo: autor.autorCargo,
       msg: msgTexto,
       tipo: tipo,
       url: data.secure_url,
@@ -3598,11 +3655,16 @@ window.enviarArquivoChatEquipe = async function(input){
     else if(isVideo) msgTexto = '[VIDEO]'  + data.secure_url;
     else             msgTexto = '[ARQUIVO]'+ data.secure_url;
 
+    const autor = autorChatJarvis();
     await db.collection('chat_equipe').add({
       tenantId: J.tid,
-      de: J.tid,
+      de: autor.de,
       para: J.chatEquipeAtivo,
-      sender: 'admin',
+      sender: autor.sender,
+      autorTipo: autor.autorTipo,
+      autorId: autor.autorId,
+      autorNome: autor.autorNome,
+      autorCargo: autor.autorCargo,
       msg: msgTexto,
       tipo: tipo,
       url: data.secure_url,
@@ -4081,4 +4143,3 @@ window.iaAnalisarEstoque = function() { _jiaChamar('Quais pecas estao em estoque
 
 </body>
 </html>
-

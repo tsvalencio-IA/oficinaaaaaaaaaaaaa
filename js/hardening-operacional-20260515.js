@@ -62,6 +62,11 @@
     const modelo = [v.marca, v.modelo || os?.veiculo].filter(Boolean).join(' ') || 'Veiculo';
     return `${prefixo ? 'Prefixo ' + prefixo + ' - ' : ''}${placa} - ${modelo} - ${c.nome || os?.cliente || 'Cliente'} - OS #${String(os?.id || '').slice(-6).toUpperCase()} - ${os?.status || 'sem status'}`;
   }
+  function osEmAtendimento(os) {
+    const st = norm([os?.status, os?.etapa].filter(Boolean).join(' '));
+    if (!st) return true;
+    return !/(cancelad|entreg|finaliz|encerrad|recusad|arquivad|excluid)/.test(st);
+  }
 
   function installCSS() {
     if (byId('hardeningOperacionalCss')) return;
@@ -89,9 +94,18 @@
     D.head.appendChild(st);
   }
 
-  function osOptionsHTML(selected) {
-    return `<option value="">Selecione placa / O.S. / cliente...</option>` + (J().os || [])
-      .filter(o => !/cancelad/i.test(String(o.status || '')))
+  function osOptionsHTML(selected, filtro) {
+    const termo = norm(filtro || '');
+    const placaBusca = placaNorm(filtro || '');
+    return `<option value="">Selecione placa / O.S. / cliente em atendimento...</option>` + (J().os || [])
+      .filter(o => osEmAtendimento(o) || String(o.id || '') === String(selected || ''))
+      .filter(o => {
+        if (!termo && !placaBusca) return true;
+        const v = veiculoByOS(o);
+        const placa = placaNorm(o.placa || v.placa || '');
+        if (placaBusca && placa && (placa.includes(placaBusca) || placaBusca.includes(placa))) return true;
+        return norm(osLabel(o)).includes(termo);
+      })
       .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
       .map(o => `<option value="${esc(o.id)}" ${String(selected||'')===String(o.id)?'selected':''}>${esc(osLabel(o))}</option>`)
       .join('');
@@ -112,7 +126,8 @@
       tools.className = 'nf-batch-tools';
       tools.innerHTML = `
         <div class="op-title">VINCULO EM LOTE DA NF</div>
-        <div class="form-row cols-2" style="align-items:end;">
+        <div class="form-row cols-3" style="align-items:end;">
+          <div class="form-group"><label class="j-label">Buscar placa / O.S.</label><input class="j-input" id="nfBatchOSBusca" placeholder="Digite a placa ou O.S." oninput="window.nfBatchFiltrarOS(this.value)"></div>
           <div class="form-group"><label class="j-label">Veiculo / O.S. destino</label><select class="j-select" id="nfBatchOSSelect"></select></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" class="btn-ghost" onclick="window.nfBatchMarcarTodos(true)">MARCAR TODOS</button>
@@ -128,11 +143,18 @@
     const sel = byId('nfBatchOSSelect');
     if (sel) {
       const old = sel.value;
-      sel.innerHTML = osOptionsHTML(old);
+      sel.innerHTML = osOptionsHTML(old, byId('nfBatchOSBusca')?.value || '');
       if (old && Array.from(sel.options).some(opt => opt.value === old)) sel.value = old;
     }
     cont.querySelectorAll('.nf-real-row').forEach(addNFRowCheckbox);
   }
+  W.nfBatchFiltrarOS = function () {
+    const sel = byId('nfBatchOSSelect');
+    if (!sel) return;
+    const old = sel.value;
+    sel.innerHTML = osOptionsHTML(old, byId('nfBatchOSBusca')?.value || '');
+    if (old && Array.from(sel.options).some(opt => opt.value === old)) sel.value = old;
+  };
 
   W.nfBatchMarcarTodos = function (on) {
     D.querySelectorAll('#containerItensNF .nf-item-check').forEach(ch => { ch.checked = !!on; });
@@ -297,6 +319,108 @@
   function renderGroup(title, arr, cls) {
     if (!arr.length) return '';
     return `<div style="margin-top:8px;"><strong class="op-chip ${cls||''}">${esc(title)}</strong><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;margin-top:6px;">${arr.map(it => `<div style="border:1px solid var(--border);background:rgba(255,255,255,.03);border-radius:3px;padding:7px;font-size:.72rem;"><b>${it.codigo ? '[' + esc(it.codigo) + '] ' : ''}${esc(it.desc || it.descricao || '-')}</b>${it.qtd ? `<br><small>Qtd ${esc(it.qtd)}</small>`:''}${it.nf || it.nfNumero ? `<br><small>NF ${esc(it.nf || it.nfNumero)} - ${esc(it.fornecedor || '')}</small>`:''}</div>`).join('')}</div></div>`;
+  }
+  function qtdCustoReal(item) {
+    const q = num(item?.qtd || item?.quantidade || item?.qtde || 1);
+    return q > 0 ? q : 1;
+  }
+  function totalCustoReal(item) {
+    const total = num(item?.totalCompra || item?.valorLiquido || item?.totalCusto || item?.custoTotal || item?.valorTotal || item?.total);
+    if (total > 0) return total;
+    const unit = num(item?.valorCompra || item?.custo || item?.valorUnitario || item?.custoUnit || item?.valorCusto || item?.precoCusto || item?.unitario);
+    return unit * qtdCustoReal(item);
+  }
+  function codigoCustoReal(item) {
+    return item?.codigoComercial || item?.codigoFornecedor || item?.codigo || item?.oem || item?.ean || '';
+  }
+  function chaveCustoReal(item, osId, placa) {
+    const desc = norm(item?.desc || item?.descricao || item?.descricaoOriginal || '');
+    return item?.origemNFItemKey || [
+      item?.nfId || item?.idNF || item?.chaveNFe || '',
+      item?.numeroItem || item?.nItem || item?.item || '',
+      item?.codigoFornecedor || '',
+      item?.codigoComercial || item?.oem || item?.codigo || '',
+      desc,
+      osId || '',
+      placa || ''
+    ].join('|');
+  }
+  function renderResumoCustosReaisVeiculo(placaFiltro, hits) {
+    if (!secret177() || !placaFiltro) return '';
+    const osList = Array.isArray(hits) ? hits : [];
+    const osIds = new Set(osList.map(o => String(o.id || '')).filter(Boolean));
+    const osById = id => (J().os || []).find(o => String(o.id || '') === String(id || '')) || {};
+    const rows = [];
+    const seen = new Set();
+    const placaOk = value => {
+      const p = placaNorm(value || '');
+      return p && (p === placaFiltro || p.includes(placaFiltro) || placaFiltro.includes(p));
+    };
+    const add = (origem, item, osBase, extra) => {
+      const os = osBase || {};
+      const v = veiculoByOS(os);
+      const placa = placaNorm(item?.placa || os.placa || v.placa || '');
+      const osId = item?.osId || os.id || '';
+      if (!osIds.has(String(osId || '')) && !placaOk(placa)) return;
+      const key = chaveCustoReal(item, osId, placa);
+      if (key && seen.has(key)) return;
+      if (key) seen.add(key);
+      const total = totalCustoReal(item);
+      rows.push(Object.assign({
+        origem,
+        codigo: codigoCustoReal(item),
+        desc: item?.desc || item?.descricao || item?.descricaoOriginal || '-',
+        qtd: qtdCustoReal(item),
+        total,
+        custoUnit: total / qtdCustoReal(item),
+        placa: placa || os.placa || v.placa || '',
+        osId,
+        nfNumero: item?.nfNumero || item?.nf || item?.notaFiscal || '',
+        fornecedor: item?.fornecedorNome || item?.fornecedor || '',
+        data: item?.dataCompra || item?.dataNF || item?.dataMov || item?.createdAt || ''
+      }, extra || {}));
+    };
+    osList.forEach(os => (Array.isArray(os.pecasReais) ? os.pecasReais : []).forEach(p => add('O.S. / pecas reais', p, os)));
+    (J().nfItensVinculos || []).forEach(v => add('NF vinculada a O.S.', v, osById(v.osId)));
+    (J().notasFiscaisEntrada || []).forEach(n => {
+      (Array.isArray(n.itens) ? n.itens : []).forEach(i => add('Item de NF', Object.assign({}, i, {
+        nfId: n.id || i.nfId,
+        nfNumero: n.numero || i.nfNumero,
+        fornecedor: n.fornecedorSnapshot?.nome || n.fornecedorNome || i.fornecedor,
+        dataCompra: n.dataNF || n.dataEmissao || n.createdAt || i.dataCompra
+      }), osById(i.osId)));
+    });
+    rows.sort((a,b) => String(b.data || '').localeCompare(String(a.data || '')));
+    if (!rows.length) {
+      return `<div class="op-card" style="border-color:rgba(255,59,59,.35);background:rgba(255,59,59,.045);">
+        <div class="op-title">RESUMO DE CUSTOS REAIS *177</div>
+        <div style="font-family:var(--fm);font-size:.72rem;color:var(--muted);">Nenhum custo real de peca/NF carregado para a placa ${esc(placaFiltro)}. O historico de O.S. abaixo continua disponivel.</div>
+      </div>`;
+    }
+    const total = rows.reduce((s,r) => s + num(r.total), 0);
+    const qtd = rows.reduce((s,r) => s + num(r.qtd), 0);
+    const nfs = Array.from(new Set(rows.map(r => r.nfNumero).filter(Boolean)));
+    const fornecedores = Array.from(new Set(rows.map(r => r.fornecedor).filter(Boolean))).slice(0, 6);
+    return `<div class="op-card" style="border-color:rgba(255,59,59,.35);background:rgba(255,59,59,.045);">
+      <div class="op-title">RESUMO DE CUSTOS REAIS *177 - ${esc(placaFiltro)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px;">
+        <div><small style="color:var(--muted);font-family:var(--fm);">Itens reais</small><br><b>${esc(rows.length)}</b></div>
+        <div><small style="color:var(--muted);font-family:var(--fm);">Quantidade</small><br><b>${esc(qtd)}</b></div>
+        <div><small style="color:var(--muted);font-family:var(--fm);">Custo real conhecido</small><br><b style="color:var(--danger);">${moeda(total)}</b></div>
+        <div><small style="color:var(--muted);font-family:var(--fm);">NFs ligadas</small><br><b>${esc(nfs.length)}</b></div>
+      </div>
+      <div style="font-family:var(--fm);font-size:.64rem;color:var(--muted);margin-bottom:8px;">Fornecedores: ${esc(fornecedores.join(', ') || 'nao informado')}. Valores restritos a peca real/NF carregada nesta sessao.</div>
+      <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Origem</th><th>Codigo / peca</th><th>O.S.</th><th>NF / fornecedor</th><th>Qtd</th><th>Custo real</th><th>Data</th></tr></thead><tbody>
+      ${rows.slice(0, 80).map(r => `<tr>
+        <td>${esc(r.origem || '-')}</td>
+        <td><b>${esc(r.codigo || '-')}</b><br>${esc(r.desc || '-')}</td>
+        <td>${r.osId ? `<button class="btn-ghost" onclick="window.editarOS && window.editarOS('${esc(r.osId)}')">OS #${esc(String(r.osId).slice(-6).toUpperCase())}</button>` : '-'}<br><small>${esc(r.placa || '')}</small></td>
+        <td>NF ${esc(r.nfNumero || '-')}<br><small>${esc(r.fornecedor || '-')}</small></td>
+        <td>${esc(r.qtd || 1)}</td>
+        <td><b>${moeda(r.total)}</b><br><small>${moeda(r.custoUnit || 0)} un.</small></td>
+        <td>${esc(String(r.data || '-').slice(0,10))}</td>
+      </tr>`).join('')}</tbody></table></div>
+    </div>`;
   }
   function codigoPecaNormalizado(v) {
     return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -543,7 +667,7 @@
         return norm(groupText(groups)).includes(termo);
       });
       if (!hits.length) { el.innerHTML = `<div style="color:var(--muted);font-family:var(--fm);font-size:.8rem;padding:10px 0;">Nenhuma O.S. encontrada.</div>`; return; }
-      el.innerHTML = `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:6px;">${hits.length} O.S. encontrada(s)</div>` + hits.map(o => {
+      el.innerHTML = renderResumoCustosReaisVeiculo(placa, hits) + `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:6px;">${hits.length} O.S. encontrada(s)</div>` + hits.map(o => {
         const v = veiculoByOS(o);
         const c = (J().clientes || []).find(x => x.id === o.clienteId) || {};
         const g = gruposHistorico(o);
