@@ -332,6 +332,275 @@
     return { excluidos, incluidos, alterados };
   }
 
+  const normNF = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+  function cargoPodeExcluirNF() {
+    const cargo = normNF(J().cargo || sessionStorage.getItem('j_cargo') || J().role || sessionStorage.getItem('j_role') || '');
+    return /superadmin|admin|dono|proprietario|owner|gerente|gestor/.test(cargo);
+  }
+
+  function itemTextoChave(it) {
+    return [it?.codigoFornecedor, it?.codigoComercial, it?.codigo, it?.oem, it?.ean, it?.descricao, it?.desc].map(normNF).filter(Boolean).join('|');
+  }
+
+  function itemCombina(a, b) {
+    const codA = normNF(a?.codigoFornecedor || a?.codigo || a?.codigoComercial || a?.oem || a?.ean || '');
+    const codB = normNF(b?.codigoFornecedor || b?.codigo || b?.codigoComercial || b?.oem || b?.ean || '');
+    const descA = normNF(a?.descricao || a?.desc || '');
+    const descB = normNF(b?.descricao || b?.desc || '');
+    if (codA && codB && codA === codB) return true;
+    if (descA && descB && descA === descB) return true;
+    return itemTextoChave(a) && itemTextoChave(a) === itemTextoChave(b);
+  }
+
+  async function carregarVinculosNF(nfId, nf) {
+    const porId = new Map();
+    (J().nfItensVinculos || [])
+      .filter(v => String(v.nfId || '') === String(nfId) || (nf?.chave && v.chave === nf.chave) || (nf?.numero && String(v.nfNumero || '') === String(nf.numero)))
+      .forEach(v => porId.set(v.id || itemTextoChave(v), v));
+    try {
+      const snap = await db().collection('nf_itens_vinculos').where('tenantId', '==', J().tid).where('nfId', '==', nfId).get();
+      snap.forEach(doc => porId.set(doc.id, { id: doc.id, ...doc.data() }));
+    } catch (_) {}
+    return Array.from(porId.values());
+  }
+
+  async function carregarFinanceiroNF(nfId, nf) {
+    const porId = new Map();
+    (J().financeiro || [])
+      .filter(f => String(f.notaFiscalId || f.nfId || '') === String(nfId) || (nf?.chave && f.chaveNFe === nf.chave) || (nf?.numero && String(f.desc || '').includes('NF ' + nf.numero)))
+      .forEach(f => porId.set(f.id || f.desc || Math.random(), f));
+    try {
+      const snap = await db().collection('financeiro').where('tenantId', '==', J().tid).where('notaFiscalId', '==', nfId).get();
+      snap.forEach(doc => porId.set(doc.id, { id: doc.id, ...doc.data() }));
+    } catch (_) {}
+    return Array.from(porId.values());
+  }
+
+  function estoqueAtualPorVinculo(v) {
+    return (J().estoque || []).find(p => String(p.id || '') === String(v.estoqueId || ''))
+      || (J().estoque || []).find(p => normNF(p.codigo || p.codigoFornecedor || p.oem || '') && normNF(p.codigo || p.codigoFornecedor || p.oem || '') === normNF(v.codigo || v.codigoFornecedor || v.codigoComercial || ''));
+  }
+
+  function atualizarPecasReaisOSBatch(batch, nfId, itensAlvo, motivo, tipo) {
+    const alvo = Array.isArray(itensAlvo) ? itensAlvo : [];
+    if (!alvo.length) return { os: 0, pecas: 0 };
+    let osAfetadas = 0;
+    let pecasAfetadas = 0;
+    (J().os || []).forEach(os => {
+      const pecas = Array.isArray(os.pecasReais) ? os.pecasReais.slice() : [];
+      if (!pecas.length) return;
+      let mudou = false;
+      let novas = pecas;
+      if (tipo === 'remover') {
+        novas = pecas.filter(p => {
+          const retirar = String(p.nfId || '') === String(nfId) && alvo.some(it => itemCombina(p, it));
+          if (retirar) { mudou = true; pecasAfetadas += 1; }
+          return !retirar;
+        });
+      } else if (tipo === 'atualizar') {
+        novas = pecas.map(p => {
+          if (String(p.nfId || '') !== String(nfId)) return p;
+          const alt = alvo.find(a => itemCombina(p, a.antes || a.depois || a));
+          if (!alt) return p;
+          mudou = true;
+          pecasAfetadas += 1;
+          const depois = alt.depois || alt;
+          return Object.assign({}, p, {
+            desc: depois.descricao || depois.desc || p.desc,
+            descricao: depois.descricao || depois.desc || p.descricao,
+            codigo: depois.codigo || depois.codigoFornecedor || p.codigo,
+            codigoFornecedor: depois.codigoFornecedor || depois.codigo || p.codigoFornecedor,
+            qtd: Number(depois.quantidade || depois.qtd || p.qtd || 1) || 1,
+            custo: Number(depois.valorUnitario || depois.custo || p.custo || 0) || 0,
+            total: Number(depois.valorLiquido || depois.total || p.total || 0) || 0,
+            ajusteEdicaoNF: true,
+            ajusteEdicaoNFEm: new Date().toISOString()
+          });
+        });
+      }
+      if (!mudou) return;
+      osAfetadas += 1;
+      const timeline = Array.isArray(os.timeline) ? os.timeline.slice() : [];
+      timeline.push({
+        ts: Date.now(),
+        por: J().nome || 'Sistema',
+        msg: tipo === 'remover' ? `Peca(s) removida(s) por edicao auditada da NF. Motivo: ${motivo}` : `Peca(s) atualizada(s) por edicao auditada da NF. Motivo: ${motivo}`,
+        tipo: 'edicao_nf_peca_real',
+        nfId
+      });
+      batch.update(db().collection('ordens_servico').doc(os.id), { pecasReais: novas, timeline, updatedAt: new Date().toISOString() });
+      os.pecasReais = novas;
+      os.timeline = timeline;
+    });
+    return { os: osAfetadas, pecas: pecasAfetadas };
+  }
+
+  async function aplicarEstornosEdicaoNF(batch, nfId, antes, diff, motivo) {
+    const vinculos = await carregarVinculosNF(nfId, antes);
+    const excluidos = diff.excluidos || [];
+    const alterados = diff.alterados || [];
+    const agora = new Date().toISOString();
+    const resumo = { vinculosCancelados: 0, vinculosAtualizados: 0, movimentos: 0, os: 0, pecasOS: 0 };
+
+    excluidos.forEach(item => {
+      const matchs = vinculos.filter(v => !/cancelado|excluido|estornado/i.test(String(v.status || '')) && itemCombina(v, item));
+      matchs.forEach(v => {
+        if (v.id) {
+          batch.update(db().collection('nf_itens_vinculos').doc(v.id), {
+            status: 'Cancelado por edicao de NF',
+            canceladoEm: agora,
+            canceladoPor: J().nome || 'Sistema',
+            motivoCancelamento: motivo,
+            updatedAt: agora
+          });
+          resumo.vinculosCancelados += 1;
+        }
+        const qtd = Number(v.qtd || item.quantidade || 0) || 0;
+        const est = estoqueAtualPorVinculo(v);
+        if (v.estoqueId && !v.estoqueBaixadoAutomatico && est) {
+          batch.update(db().collection('estoqueItems').doc(v.estoqueId), { qtd: Math.max(0, (Number(est.qtd) || 0) - qtd), updatedAt: agora });
+        }
+        batch.set(db().collection('estoque_movimentos').doc(), {
+          tenantId: J().tid,
+          estoqueId: v.estoqueId || '',
+          tipo: 'estorno_entrada_nf_editada',
+          nfId,
+          nfNumero: antes.numero || v.nfNumero || '',
+          codigo: v.codigoFornecedor || v.codigo || '',
+          desc: v.desc || item.descricao || '',
+          qtd: -Math.abs(qtd),
+          custo: Number(v.custo || item.valorUnitario || 0) || 0,
+          total: Number(v.total || item.valorLiquido || 0) || 0,
+          osId: v.osId || item.osId || '',
+          placa: v.placa || item.placa || '',
+          motivo,
+          createdAt: agora,
+          usuario: J().nome || 'Sistema'
+        });
+        resumo.movimentos += 1;
+        if (v.estoqueBaixadoAutomatico) {
+          batch.set(db().collection('estoque_movimentos').doc(), {
+            tenantId: J().tid,
+            estoqueId: v.estoqueId || '',
+            tipo: 'estorno_baixa_auto_nf_editada',
+            nfId,
+            nfNumero: antes.numero || v.nfNumero || '',
+            codigo: v.codigoFornecedor || v.codigo || '',
+            desc: v.desc || item.descricao || '',
+            qtd: Math.abs(qtd),
+            custo: Number(v.custo || item.valorUnitario || 0) || 0,
+            total: Number(v.total || item.valorLiquido || 0) || 0,
+            osId: v.osId || item.osId || '',
+            placa: v.placa || item.placa || '',
+            motivo,
+            createdAt: agora,
+            usuario: J().nome || 'Sistema'
+          });
+          resumo.movimentos += 1;
+        }
+      });
+    });
+
+    alterados.forEach(par => {
+      const depois = par.depois || {};
+      const antesItem = par.antes || {};
+      const matchs = vinculos.filter(v => !/cancelado|excluido|estornado/i.test(String(v.status || '')) && itemCombina(v, antesItem));
+      matchs.forEach(v => {
+        const qtdNova = Number(depois.quantidade || depois.qtd || 0) || 0;
+        const qtdAnt = Number(v.qtd || antesItem.quantidade || antesItem.qtd || 0) || 0;
+        const delta = qtdNova - qtdAnt;
+        if (v.id) {
+          batch.update(db().collection('nf_itens_vinculos').doc(v.id), {
+            codigo: depois.codigo || depois.codigoFornecedor || v.codigo || '',
+            codigoFornecedor: depois.codigoFornecedor || depois.codigo || v.codigoFornecedor || '',
+            codigoComercial: depois.codigoComercial || depois.oem || v.codigoComercial || '',
+            desc: depois.descricao || depois.desc || v.desc || '',
+            qtd: qtdNova,
+            custo: Number(depois.valorUnitario || depois.custo || 0) || 0,
+            total: Number(depois.valorLiquido || depois.total || 0) || 0,
+            desconto: Number(depois.desconto || 0) || 0,
+            editadoEmNF: true,
+            editadoEm: agora,
+            motivoEdicao: motivo,
+            updatedAt: agora
+          });
+          resumo.vinculosAtualizados += 1;
+        }
+        const est = estoqueAtualPorVinculo(v);
+        if (delta && v.estoqueId && !v.estoqueBaixadoAutomatico && est) {
+          batch.update(db().collection('estoqueItems').doc(v.estoqueId), { qtd: Math.max(0, (Number(est.qtd) || 0) + delta), updatedAt: agora });
+          batch.set(db().collection('estoque_movimentos').doc(), {
+            tenantId: J().tid,
+            estoqueId: v.estoqueId || '',
+            tipo: 'ajuste_qtd_nf_editada',
+            nfId,
+            nfNumero: antes.numero || v.nfNumero || '',
+            codigo: depois.codigoFornecedor || depois.codigo || v.codigoFornecedor || v.codigo || '',
+            desc: depois.descricao || depois.desc || v.desc || '',
+            qtd: delta,
+            custo: Number(depois.valorUnitario || depois.custo || 0) || 0,
+            total: Number(depois.valorLiquido || depois.total || 0) || 0,
+            motivo,
+            createdAt: agora,
+            usuario: J().nome || 'Sistema'
+          });
+          resumo.movimentos += 1;
+        }
+      });
+    });
+
+    const rem = atualizarPecasReaisOSBatch(batch, nfId, excluidos, motivo, 'remover');
+    const upd = atualizarPecasReaisOSBatch(batch, nfId, alterados, motivo, 'atualizar');
+    resumo.os = rem.os + upd.os;
+    resumo.pecasOS = rem.pecas + upd.pecas;
+    return resumo;
+  }
+
+  async function ajustarFinanceiroEdicaoNF(batch, nfId, antes, novoTotal, motivo) {
+    const titulos = await carregarFinanceiroNF(nfId, antes);
+    if (!titulos.length) return { titulos: 0, ajuste: 0 };
+    const totalAnterior = titulos.reduce((s, f) => s + (Number(f.valor) || 0), 0);
+    const diff = Math.round((Number(novoTotal || 0) - totalAnterior) * 100) / 100;
+    const bloqueado = titulos.some(f => /pago|liquidado|baixado|agrupado|cancelado/.test(normNF(f.status)) || f.pacoteBoletoId || f.bloqueadoPagamentoIndividual);
+    const agora = new Date().toISOString();
+    if (bloqueado) {
+      if (Math.abs(diff) >= 0.01) {
+        batch.set(db().collection('financeiro').doc(), {
+          tenantId: J().tid,
+          tipo: diff > 0 ? 'Saida' : 'Entrada',
+          status: 'Pendente',
+          desc: `Ajuste auditado NF ${antes.numero || nfId} por edicao`,
+          valor: Math.abs(diff),
+          pgto: 'Ajuste auditado',
+          venc: hojeISOEdicao(),
+          notaFiscalId: nfId,
+          nfAjusteOrigem: 'edicao_nf',
+          motivo,
+          createdAt: agora
+        });
+      }
+      return { titulos: titulos.length, ajuste: diff };
+    }
+    if (titulos.length === 1 && titulos[0].id) {
+      batch.update(db().collection('financeiro').doc(titulos[0].id), { valor: Number(novoTotal || 0), status: titulos[0].status || 'Pendente', atualizadoPorEdicaoNF: true, motivoEdicaoNF: motivo, updatedAt: agora });
+    } else {
+      const base = totalAnterior || 1;
+      titulos.forEach((f, idx) => {
+        if (!f.id) return;
+        const valor = idx === titulos.length - 1
+          ? Math.round((Number(novoTotal || 0) - titulos.slice(0, idx).reduce((s, x) => s + ((Number(x.valor) || 0) / base) * Number(novoTotal || 0), 0)) * 100) / 100
+          : Math.round((((Number(f.valor) || 0) / base) * Number(novoTotal || 0)) * 100) / 100;
+        batch.update(db().collection('financeiro').doc(f.id), { valor, atualizadoPorEdicaoNF: true, motivoEdicaoNF: motivo, updatedAt: agora });
+      });
+    }
+    return { titulos: titulos.length, ajuste: diff };
+  }
+
+  function hojeISOEdicao() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
   async function abrirEdicaoNF(colOrId, maybeId) {
     ensureNFEditBox();
     const col = maybeId ? colOrId : 'notas_fiscais_entrada';
@@ -344,6 +613,7 @@
     }
     if (!n) { toast('Nota fiscal não encontrada nos dados carregados.', 'warn'); return; }
     W.prepNF?.();
+    W._thiaModoNF = 'edicao_nf';
     W._thiaNfEditBefore = clone(n);
     setValue('nfEditId', id);
     setValue('nfEditCollection', col);
@@ -417,8 +687,13 @@
     try { fv = W.firebase?.firestore?.FieldValue || (typeof firebase !== 'undefined' ? firebase.firestore?.FieldValue : null); } catch (_) {}
     if (fv?.arrayUnion) payload.auditoriaEdicoes = fv.arrayUnion(registro);
     try {
-      await db().collection(col).doc(id).update(payload);
-      await db().collection('lixeira_auditoria').add({
+      const batch = db().batch();
+      const efeitos = await aplicarEstornosEdicaoNF(batch, id, antes, diff, motivo);
+      const financeiro = await ajustarFinanceiroEdicaoNF(batch, id, antes, totalItens, motivo);
+      payload.reconciliacaoEstoqueFinanceiroPendente = diff.incluidos.length > 0;
+      payload.resumoReconciliacaoEdicaoNF = { efeitos, financeiro };
+      batch.update(db().collection(col).doc(id), payload);
+      batch.set(db().collection('lixeira_auditoria').doc(), {
         tenantId: J().tid,
         modulo: 'ESTOQUE/NF',
         acao: `Editou itens da NF ${payload.numero || id}`,
@@ -430,14 +705,76 @@
         antes: { numero: antes.numero || '', totalNF: antes.totalNF || antes.totalItens || 0, itens: antes.itens || [] },
         depois: { numero: payload.numero, totalNF: payload.totalNF, itens },
         diff,
-        aviso: 'Espelho da NF atualizado; estoque/financeiro marcados para reconciliacao auditada.',
+        efeitos,
+        financeiro,
+        aviso: diff.incluidos.length ? 'Itens novos adicionados em modo edicao ficam pendentes de reconciliacao manual; nada foi relancado como entrada nova.' : 'Edicao aplicada sem relancar NF como nova entrada.',
         ts: new Date().toISOString()
       });
-      toast(`NF ${payload.numero || id} atualizada com auditoria. Reconciliacao de estoque/financeiro marcada como pendente.`, 'ok');
+      await batch.commit();
+      toast(`NF ${payload.numero || id} atualizada com auditoria. Nenhuma entrada nova foi criada.`, 'ok');
+      W._thiaModoNF = '';
       setNFSavingMode(false);
       W.fecharModal?.('modalNF');
     } catch (e) {
       toast('Erro ao salvar edição da NF: ' + (e.message || e), 'err');
+    }
+    return true;
+  }
+
+  async function excluirNFAuditada(idEntrada) {
+    const id = idEntrada || val('nfEditId');
+    if (!id || !db()) return false;
+    if (!cargoPodeExcluirNF()) {
+      toast('Exclusao de NF ja lancada e permitida somente para admin/dono/gerente autorizado.', 'warn');
+      return true;
+    }
+    let nf = (J().notasFiscaisEntrada || []).find(x => String(x.id) === String(id));
+    if (!nf) {
+      const snap = await db().collection('notas_fiscais_entrada').doc(id).get();
+      if (snap.exists) nf = { id: snap.id, ...snap.data() };
+    }
+    if (!nf) { toast('NF nao encontrada para exclusao auditada.', 'warn'); return true; }
+    const motivo = prompt(`Justificativa obrigatoria para excluir/cancelar a NF ${nf.numero || id}:`, '') || '';
+    if (motivo.trim().length < 8) {
+      toast('Informe uma justificativa objetiva para excluir/cancelar a NF.', 'warn');
+      return true;
+    }
+    const diff = { excluidos: Array.isArray(nf.itens) ? nf.itens : [], incluidos: [], alterados: [] };
+    const agora = new Date().toISOString();
+    try {
+      const batch = db().batch();
+      const efeitos = await aplicarEstornosEdicaoNF(batch, id, nf, diff, motivo.trim());
+      const financeiro = await ajustarFinanceiroEdicaoNF(batch, id, nf, 0, motivo.trim());
+      batch.update(db().collection('notas_fiscais_entrada').doc(id), {
+        excluidaAuditada: true,
+        statusFiscal: 'Excluida auditada',
+        statusConferencia: 'Excluida auditada',
+        excluidaEm: agora,
+        excluidaPor: J().nome || 'Sistema',
+        motivoExclusao: motivo.trim(),
+        resumoExclusaoAuditada: { efeitos, financeiro },
+        updatedAt: agora
+      });
+      batch.set(db().collection('lixeira_auditoria').doc(), {
+        tenantId: J().tid,
+        modulo: 'ESTOQUE/NF',
+        acao: `Exclusao auditada da NF ${nf.numero || id}`,
+        usuario: J().nome || 'Sistema',
+        perfil: J().role || '',
+        entidade: 'notas_fiscais_entrada',
+        entidadeId: id,
+        motivo: motivo.trim(),
+        antes: nf,
+        efeitos,
+        financeiro,
+        ts: agora
+      });
+      await batch.commit();
+      toast(`NF ${nf.numero || id} excluida/cancelada com estorno auditado.`, 'ok');
+      W.fecharModal?.('modalNF');
+      W.fecharModal?.('modalFiscalDocHardening');
+    } catch (e) {
+      toast('Erro na exclusao auditada da NF: ' + (e.message || e), 'err');
     }
     return true;
   }
@@ -453,6 +790,7 @@
           setValue('nfEditJust', '');
           if ($('nfEditBox')) $('nfEditBox').style.display = 'none';
         }
+        W._thiaModoNF = '';
         W._thiaNfEditBefore = null;
         setNFSavingMode(false);
         return out;
@@ -462,7 +800,7 @@
     if (typeof W.salvarNF === 'function' && !W.salvarNF.__thiaEditWrap) {
       const oldSalvar = W.salvarNF;
       W.salvarNF = async function () {
-        if (val('nfEditId')) {
+        if (val('nfEditId') || W._thiaModoNF === 'edicao_nf') {
           const handled = await salvarEdicaoNF();
           if (handled) return;
         }
@@ -470,6 +808,9 @@
       };
       W.salvarNF.__thiaEditWrap = true;
     }
+    W.salvarEdicaoNF = salvarEdicaoNF;
+    W.excluirNFAuditada = excluirNFAuditada;
+    W.excluirNFDef = excluirNFAuditada;
     W.editarDocFiscal = abrirEdicaoNF;
   }
 

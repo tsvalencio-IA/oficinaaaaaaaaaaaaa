@@ -1,10 +1,10 @@
-/*
- * thIAguinho ERP — NFe Entrada PRO 10/10
- * Correção profissional para XML/NFe de autopeças/oficinas.
- * - Mantém o módulo financeiro existente e sobrescreve apenas o fluxo de Entrada NF.
- * - Lê valores fiscais com ponto decimal do XML sem converter para milhares.
- * - Salva espelho completo da NF, itens fiscais, destino por item, vínculos com OS/placa e duplicatas no financeiro.
- * Powered by thIAguinho Soluções Digitais
+﻿/*
+ * thIAguinho ERP â€” NFe Entrada PRO 10/10
+ * CorreÃ§Ã£o profissional para XML/NFe de autopeÃ§as/oficinas.
+ * - MantÃ©m o mÃ³dulo financeiro existente e sobrescreve apenas o fluxo de Entrada NF.
+ * - LÃª valores fiscais com ponto decimal do XML sem converter para milhares.
+ * - Salva espelho completo da NF, itens fiscais, destino por item, vÃ­nculos com OS/placa e duplicatas no financeiro.
+ * Powered by thIAguinho SoluÃ§Ãµes Digitais
  */
 (function(){
   'use strict';
@@ -33,7 +33,7 @@
     let s = String(v).trim();
     if (!s) return 0;
     s = s.replace(/R\$|\s/g, '');
-    // XML NFe usa ponto decimal. Campo digitado no Brasil pode usar vírgula.
+    // XML NFe usa ponto decimal. Campo digitado no Brasil pode usar vÃ­rgula.
     if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
     else if (s.includes(',')) s = s.replace(',', '.');
     const n = Number(s);
@@ -45,7 +45,7 @@
     let descricaoLimpa = original;
     let marca = '';
 
-    // Padrões reais observados em XML de autopeças:
+    // PadrÃµes reais observados em XML de autopeÃ§as:
     // WO150-FILTRO DE OLEO LUBRIFICANTE - WEGA
     // 40859X22XS-CORREIA COMANDO VALVULAS - GATES
     // AMORTECEDOR DIANTEIRO - AMD0356 - PERFECT
@@ -135,7 +135,7 @@
   function parseNFeXML(text){
     const xml = new DOMParser().parseFromString(text, 'text/xml');
     const perr = xml.getElementsByTagName('parsererror')[0];
-    if(perr) throw new Error('XML inválido: ' + perr.textContent.slice(0,120));
+    if(perr) throw new Error('XML invÃ¡lido: ' + perr.textContent.slice(0,120));
     const inf = nodes(xml, 'infNFe')[0];
     const ide = nodes(xml, 'ide')[0];
     const emit = nodes(xml, 'emit')[0];
@@ -216,7 +216,7 @@
         vIBS: parseNum(getFirstText(total,'vIBS')), vCBS: parseNum(getFirstText(total,'vCBS')), vIBSCBS: parseNum(getFirstText(total,'vIBSCBS'))
       },
       cobranca: { numero:getFirstText(fat,'nFat'), valorOriginal:parseNum(getFirstText(fat,'vOrig')), desconto:parseNum(getFirstText(fat,'vDesc')), valorLiquido:parseNum(getFirstText(fat,'vLiq')), duplicatas },
-      pagamentos, infAdFisco:getFirstText(xml,'infAdFisco'), infCpl:getFirstText(xml,'infCpl'), rawXml:text
+      pagamentos, referencias:nodes(xml, 'refNFe').map(r => r.textContent.trim()).filter(Boolean), infAdFisco:getFirstText(xml,'infAdFisco'), infCpl:getFirstText(xml,'infCpl'), rawXml:text
     };
     return info;
   }
@@ -245,10 +245,10 @@
       const v = (W.J?.veiculos || []).find(x => x.id === o.veiculoId) || {};
       const c = (W.J?.clientes || []).find(x => x.id === o.clienteId) || {};
       const placa = (o.placa || v.placa || 'S/PLACA').toUpperCase();
-      const veic = [v.marca, v.modelo || o.veiculo].filter(Boolean).join(' ') || 'Veículo';
+      const veic = [v.marca, v.modelo || o.veiculo].filter(Boolean).join(' ') || 'VeÃ­culo';
       const data = brDate((o.data || o.createdAt || o.updatedAt || '').slice(0,10));
       const status = o.status || 'em atendimento';
-      const label = `${placa} — ${veic} — ${c.nome || o.cliente || 'Cliente'} — O.S. #${String(o.id||'').slice(-6).toUpperCase()} — ${status}${data ? ' — ' + data : ''}`;
+      const label = `${placa} â€” ${veic} â€” ${c.nome || o.cliente || 'Cliente'} â€” O.S. #${String(o.id||'').slice(-6).toUpperCase()} â€” ${status}${data ? ' â€” ' + data : ''}`;
       return `<option value="${esc(o.id)}" data-placa="${esc(placa)}" ${String(selectedOSId||'')===String(o.id)?'selected':''}>${esc(label)}</option>`;
     }).join('');
   }
@@ -259,16 +259,16 @@
     return `
       <div class="nf-real-row" style="border:1px solid var(--border);border-radius:4px;padding:10px;background:rgba(0,0,0,.08);display:grid;gap:8px;">
         <div style="display:grid;grid-template-columns:120px 130px minmax(220px,2fr) 120px 80px 105px 105px 105px 105px 34px;gap:8px;align-items:end;" class="nf-real-grid-main">
-          <div><label class="j-label">Código fornecedor</label><input class="j-input nf-codforn" value="${esc(i.codigoFornecedor||i.codigo||'')}"></div>
-          <div><label class="j-label">Código/OEM</label><input class="j-input nf-codigo" value="${esc(i.codigoComercial||i.oem||'')}"></div>
-          <div><label class="j-label">Descrição limpa da peça</label><input class="j-input nf-desc" value="${esc(i.descricao||'')}" title="Original XML: ${esc(i.descricaoOriginal||i.descricao||'')}" placeholder="Descrição da peça"></div>
+          <div><label class="j-label">CÃ³digo fornecedor</label><input class="j-input nf-codforn" value="${esc(i.codigoFornecedor||i.codigo||'')}"></div>
+          <div><label class="j-label">CÃ³digo/OEM</label><input class="j-input nf-codigo" value="${esc(i.codigoComercial||i.oem||'')}"></div>
+          <div><label class="j-label">DescriÃ§Ã£o limpa da peÃ§a</label><input class="j-input nf-desc" value="${esc(i.descricao||'')}" title="Original XML: ${esc(i.descricaoOriginal||i.descricao||'')}" placeholder="DescriÃ§Ã£o da peÃ§a"></div>
           <div><label class="j-label">Marca</label><input class="j-input nf-marca" value="${esc(i.marca||'')}"></div>
           <div><label class="j-label">Qtd</label><input class="j-input nf-qtd" inputmode="decimal" value="${esc(fmtQtd(i.quantidade||1))}" oninput="window.calcNFTotal()"></div>
           <div><label class="j-label">Custo un.</label><input class="j-input nf-custo" inputmode="decimal" value="${esc(fmtBR(i.valorUnitario||0))}" oninput="window.calcNFTotal()"></div>
           <div><label class="j-label">Desc.</label><input class="j-input nf-descvalor" inputmode="decimal" value="${esc(fmtBR(i.desconto||0))}" oninput="window.calcNFTotal()"></div>
           <div><label class="j-label">Venda</label><input class="j-input nf-venda" inputmode="decimal" value="${esc(fmtBR(i.venda || ((Number(i.valorUnitario)||0)*1.5)))}"></div>
           <div><label class="j-label">EAN</label><input class="j-input nf-ean" value="${esc(i.ean||'')}"></div>
-          <button type="button" title="Remover item" onclick="this.closest('.nf-real-row').remove();window.calcNFTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;height:32px;">✕</button>
+          <button type="button" title="Remover item" onclick="this.closest('.nf-real-row').remove();window.calcNFTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;height:32px;">âœ•</button>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:end;" class="nf-real-grid-fiscal">
           <div><label class="j-label">NCM</label><input class="j-input nf-ncm-input" value="${esc(i.ncm||'')}"></div>
@@ -277,12 +277,12 @@
           <div><label class="j-label">Total item XML</label><input class="j-input" value="R$ ${esc(fmtBR(i.valorLiquido || ((i.quantidade||1)*(i.valorUnitario||0)-(i.desconto||0))))}" readonly></div>
         </div>
         <div style="display:grid;grid-template-columns:170px minmax(220px,1fr) minmax(160px,1fr);gap:8px;align-items:end;" class="nf-real-grid-destino">
-          <div><label class="j-label">Destino real da peça</label><select class="j-select nf-finalidade" onchange="window._nfeProToggleDestino(this)">
+          <div><label class="j-label">Destino real da peÃ§a</label><select class="j-select nf-finalidade" onchange="window._nfeProToggleDestino(this)">
             <option value="estoque" ${destino==='estoque'?'selected':''}>Estoque</option>
-            <option value="os" ${destino==='os'?'selected':''}>Vincular a O.S./veículo</option>
+            <option value="os" ${destino==='os'?'selected':''}>Vincular a O.S./veÃ­culo</option>
             <option value="placa" ${destino==='placa'?'selected':''}>Separar por placa</option>
             <option value="garantia" ${destino==='garantia'?'selected':''}>Garantia</option>
-            <option value="devolucao" ${destino==='devolucao'?'selected':''}>Devolução</option>
+            <option value="devolucao" ${destino==='devolucao'?'selected':''}>DevoluÃ§Ã£o</option>
             <option value="uso_interno" ${destino==='uso_interno'?'selected':''}>Uso interno</option>
             <option value="outro" ${destino==='outro'?'selected':''}>Outro</option>
           </select></div>
@@ -292,7 +292,7 @@
             <select class="j-select nf-os-select" onchange="window.nfProSelecionouOS(this)"><option value="">Escolha pela placa / O.S. / cliente...</option>${options}</select>
             <small class="nf-os-alert" style="display:block;margin-top:4px;color:var(--muted);font-family:var(--fm);font-size:.62rem;">Lista limitada a O.S. em atendimento.</small>
           </div>
-          <div><label class="j-label">Placa/finalidade/observação</label><input class="j-input nf-vinculo" value="${esc(i.vinculo||'')}" placeholder="Ex.: ABC1234, garantia, uso interno..."></div>
+          <div><label class="j-label">Placa/finalidade/observaÃ§Ã£o</label><input class="j-input nf-vinculo" value="${esc(i.vinculo||'')}" placeholder="Ex.: ABC1234, garantia, uso interno..."></div>
         </div>
         <div style="font-family:var(--fm);font-size:.64rem;color:var(--muted);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;" class="nf-real-tributos">
           <span>NCM: <b class="nf-ncm">${esc(i.ncm||'')}</b></span><span>CFOP: <b class="nf-cfop">${esc(i.cfop||'')}</b></span><span>CEST: <b class="nf-cest">${esc(i.cest||'')}</b></span><span>Total item: <b class="nf-total-item">R$ ${fmtBR(i.valorLiquido || ((i.quantidade||1)*(i.valorUnitario||0)-(i.desconto||0)))}</b></span>
@@ -413,7 +413,7 @@
     const el = $('nfTotal'); if(el) el.textContent = fmtBR(total);
     const current = W._nfeProData;
     if(current && current.totais && current.totais.vNF && Math.abs(total - current.totais.vNF) > 0.02){
-      if(el) el.title = `Atenção: total dos itens (${fmtBR(total)}) difere do total fiscal da NF (${fmtBR(current.totais.vNF)}).`;
+      if(el) el.title = `AtenÃ§Ã£o: total dos itens (${fmtBR(total)}) difere do total fiscal da NF (${fmtBR(current.totais.vNF)}).`;
     }
     if($('nfParcelasBox')?.style.display === 'block' && !(W._nfeProData?.cobranca?.duplicatas || []).length) gerarParcelasManuais();
   };
@@ -430,7 +430,7 @@
     if(existente){ $('nfFornec').value = existente.id; return; }
     const tempId = '__xml__' + cnpj;
     if(!$('nfFornec').querySelector(`option[value="${tempId}"]`)){
-      const opt = D.createElement('option'); opt.value = tempId; opt.textContent = `${fornec.nome || 'Fornecedor XML'} — ${cnpj || 'sem CNPJ'} (novo)`; opt.dataset.xmlFornecedor = JSON.stringify(fornec);
+      const opt = D.createElement('option'); opt.value = tempId; opt.textContent = `${fornec.nome || 'Fornecedor XML'} â€” ${cnpj || 'sem CNPJ'} (novo)`; opt.dataset.xmlFornecedor = JSON.stringify(fornec);
       $('nfFornec').appendChild(opt);
     }
     $('nfFornec').value = tempId;
@@ -445,10 +445,10 @@
     if(!nfe){ box.innerHTML=''; box.style.display='none'; return; }
     box.style.display='block';
     box.innerHTML = `<b style="color:var(--accent)">ESPELHO FISCAL DA NF-E</b><br>
-      Chave: <b>${esc(nfe.chave)}</b> · NF: <b>${esc(nfe.numero)}</b> / Série <b>${esc(nfe.serie)}</b> · Emissão: <b>${brDate(nfe.dataEmissao)}</b><br>
-      Fornecedor: <b>${esc(nfe.fornecedor.nome)}</b> · CNPJ: <b>${esc(nfe.fornecedor.cnpj)}</b> · IE: <b>${esc(nfe.fornecedor.ie)}</b><br>
-      Natureza: <b>${esc(nfe.natureza)}</b> · Protocolo: <b>${esc(nfe.protocolo)}</b> · Status: <b>${esc(nfe.statusAutorizacao)} ${esc(nfe.motivoAutorizacao)}</b><br>
-      Produtos: <b>R$ ${fmtBR(nfe.totais.vProd)}</b> · Desc.: <b>R$ ${fmtBR(nfe.totais.vDesc)}</b> · IPI: <b>R$ ${fmtBR(nfe.totais.vIPI)}</b> · Total NF: <b>R$ ${fmtBR(nfe.totais.vNF)}</b>`;
+      Chave: <b>${esc(nfe.chave)}</b> Â· NF: <b>${esc(nfe.numero)}</b> / SÃ©rie <b>${esc(nfe.serie)}</b> Â· EmissÃ£o: <b>${brDate(nfe.dataEmissao)}</b><br>
+      Fornecedor: <b>${esc(nfe.fornecedor.nome)}</b> Â· CNPJ: <b>${esc(nfe.fornecedor.cnpj)}</b> Â· IE: <b>${esc(nfe.fornecedor.ie)}</b><br>
+      Natureza: <b>${esc(nfe.natureza)}</b> Â· Protocolo: <b>${esc(nfe.protocolo)}</b> Â· Status: <b>${esc(nfe.statusAutorizacao)} ${esc(nfe.motivoAutorizacao)}</b><br>
+      Produtos: <b>R$ ${fmtBR(nfe.totais.vProd)}</b> Â· Desc.: <b>R$ ${fmtBR(nfe.totais.vDesc)}</b> Â· IPI: <b>R$ ${fmtBR(nfe.totais.vIPI)}</b> Â· Total NF: <b>R$ ${fmtBR(nfe.totais.vNF)}</b>`;
   }
   function cnpjFornecedorNF(nfe){
     return onlyDigits(nfe?.fornecedor?.cnpj || nfe?.fornecedorCNPJ || nfe?.cnpj || '');
@@ -563,10 +563,10 @@
         }
         W.checkPgtoNF();
         W.calcNFTotal();
-        const msg = `✓ XML importado: NF ${nfe.numero} — ${nfe.itens.length} item(ns) — Total R$ ${fmtBR(nfe.totais.vNF || calcTotalNumber())}`;
+        const msg = `âœ“ XML importado: NF ${nfe.numero} â€” ${nfe.itens.length} item(ns) â€” Total R$ ${fmtBR(nfe.totais.vNF || calcTotalNumber())}`;
         if(typeof W.toast === 'function') W.toast(msg); else alert(msg);
         if(typeof W.audit === 'function') W.audit('ESTOQUE/NF', `Importou XML NFe ${nfe.numero} (${nfe.chave}) de ${nfe.fornecedor.nome}`);
-      }catch(e){ console.error('[NFe PRO] Falha XML:', e); if(typeof W.toast==='function') W.toast('✕ XML inválido ou não reconhecido: '+e.message,'err'); else alert(e.message); }
+      }catch(e){ console.error('[NFe PRO] Falha XML:', e); if(typeof W.toast==='function') W.toast('âœ• XML invÃ¡lido ou nÃ£o reconhecido: '+e.message,'err'); else alert(e.message); }
       if($('xmlInputFile')) $('xmlInputFile').value='';
     };
     r.readAsText(file);
@@ -651,7 +651,7 @@
   function fornecedorNomeNF(nfe, fornecedorId){
     const local = (W.J?.fornecedores || []).find(f => f.id === fornecedorId) || null;
     const optText = $('nfFornec')?.selectedOptions?.[0]?.textContent || '';
-    const optClean = optText.replace(/\s+[-—].*$/g, '').replace(/\s+\(novo\)$/i, '').trim();
+    const optClean = optText.replace(/\s+[-â€”].*$/g, '').replace(/\s+\(novo\)$/i, '').trim();
     return nfe?.fornecedor?.nome || local?.nome || local?.razao || optClean || 'Fornecedor';
   }
   function placaDaOSNF(os){
@@ -877,10 +877,114 @@
     batch.set(ref, { tenantId:W.J?.tid, nome:fornec.nome || 'Fornecedor XML', fantasia:fornec.fantasia || '', cnpj:fornec.cnpj || '', ie:fornec.ie || '', telefone:fornec.endereco?.telefone || '', cep:fornec.endereco?.cep || '', endereco:fornec.endereco || {}, origem:'xml_nfe', createdAt:new Date().toISOString() });
     return ref.id;
   }
+  function isNFDevolucao(nfe, itens){
+    const txt = normalizeTextNF([nfe?.natureza, nfe?.finalidade, nfe?.infCpl, nfe?.infAdFisco].join(' '));
+    if (txt.includes('devolucao') || String(nfe?.finalidade || '') === '4') return true;
+    const arr = Array.isArray(itens) ? itens : [];
+    return arr.length > 0 && arr.every(i => normalizeTextNF(i.destino || i.finalidade || '').includes('devolucao'));
+  }
+  function itemNFMatch(a, b){
+    const ca = normalizeTextNF(a?.codigoFornecedor || a?.codigo || a?.codigoComercial || a?.oem || a?.ean || '');
+    const cb = normalizeTextNF(b?.codigoFornecedor || b?.codigo || b?.codigoComercial || b?.oem || b?.ean || '');
+    const da = normalizeTextNF(a?.descricao || a?.desc || '');
+    const db = normalizeTextNF(b?.descricao || b?.desc || '');
+    return (ca && cb && ca === cb) || (da && db && da === db);
+  }
+  async function localizarNFOriginalDevolucao(nfe){
+    const refs = Array.isArray(nfe?.referencias) ? nfe.referencias : [];
+    let original = null;
+    if (refs.length) original = (W.J?.notasFiscaisEntrada || []).find(n => refs.includes(n.chave));
+    if (!original && refs.length && W.db && W.J?.tid) {
+      try {
+        const snap = await W.db.collection('notas_fiscais_entrada').where('tenantId','==',W.J.tid).where('chave','==',refs[0]).limit(1).get();
+        snap.forEach(doc => { original = { id:doc.id, ...doc.data() }; });
+      } catch (_) {}
+    }
+    if (!original) {
+      const termo = prompt('Informe o numero ou ID da NF original que esta sendo devolvida:', '') || '';
+      if (!termo.trim()) return null;
+      original = (W.J?.notasFiscaisEntrada || []).find(n => String(n.id) === termo.trim() || String(n.numero || '') === termo.trim() || String(n.chave || '') === termo.trim());
+      if (!original && W.db && W.J?.tid) {
+        try {
+          const snap = await W.db.collection('notas_fiscais_entrada').where('tenantId','==',W.J.tid).where('numero','==',termo.trim()).limit(1).get();
+          snap.forEach(doc => { original = { id:doc.id, ...doc.data() }; });
+        } catch (_) {}
+      }
+    }
+    return original || null;
+  }
+  function removerPecasReaisDevolucaoBatch(batch, nfOriginal, itens, nfPayload, motivo){
+    let removidas = 0;
+    (W.J?.os || []).forEach(os => {
+      const pecas = Array.isArray(os.pecasReais) ? os.pecasReais.slice() : [];
+      if (!pecas.length) return;
+      const novas = pecas.filter(p => {
+        const daNF = String(p.nfId || '') === String(nfOriginal?.id || '') || String(p.nfNumero || p.nf || '') === String(nfOriginal?.numero || '');
+        const bate = daNF && itens.some(i => itemNFMatch(p, i));
+        if (bate) removidas += 1;
+        return !bate;
+      });
+      if (novas.length === pecas.length) return;
+      const timeline = Array.isArray(os.timeline) ? os.timeline.slice() : [];
+      timeline.push({ ts:Date.now(), por:W.J?.nome || 'Sistema', tipo:'devolucao_nf', nfId:nfPayload.id || '', msg:`Peca removida por NF de devolucao ${nfPayload.numero || ''}. ${motivo || ''}` });
+      batch.update(W.db.collection('ordens_servico').doc(os.id), { pecasReais:novas, timeline, updatedAt:new Date().toISOString() });
+      os.pecasReais = novas;
+      os.timeline = timeline;
+    });
+    return removidas;
+  }
+  async function salvarNFDevolucao(itens, nfe, fornecedorId, nfPayload){
+    const original = await localizarNFOriginalDevolucao(nfe);
+    if (!original) {
+      if(W.toast) W.toast('NF de devolucao exige vinculo com a NF original. Operacao bloqueada ate selecionar a original.', 'warn');
+      return;
+    }
+    const motivo = prompt('Justificativa/observacao da devolucao:', 'Devolucao de mercadoria ao fornecedor') || 'Devolucao de mercadoria ao fornecedor';
+    const batch = W.db.batch();
+    const nfRef = W.db.collection('notas_fiscais_entrada').doc();
+    const agora = new Date().toISOString();
+    if (fornecedorId && nfe?.fornecedor && !(W.J?.fornecedores || []).some(f => String(f.id) === String(fornecedorId))) {
+      const fornec = nfe.fornecedor || {};
+      batch.set(W.db.collection('fornecedores').doc(fornecedorId), { tenantId:W.J?.tid, nome:fornec.nome || 'Fornecedor XML', fantasia:fornec.fantasia || '', cnpj:fornec.cnpj || '', ie:fornec.ie || '', telefone:fornec.endereco?.telefone || '', cep:fornec.endereco?.cep || '', endereco:fornec.endereco || {}, origem:'xml_nfe', createdAt:agora }, { merge:true });
+    }
+    nfPayload.id = nfRef.id;
+    nfPayload.tipo = 'devolucao';
+    nfPayload.nfOriginalId = original.id || '';
+    nfPayload.chaveOriginal = original.chave || (nfe?.referencias || [])[0] || '';
+    nfPayload.statusConferencia = 'Devolucao vinculada';
+    nfPayload.motivoDevolucao = motivo;
+    nfPayload.createdAt = agora;
+    nfPayload.updatedAt = agora;
+    batch.set(nfRef, nfPayload);
+    const vinculosOrig = (W.J?.nfItensVinculos || []).filter(v => String(v.nfId || '') === String(original.id || '') || (original.chave && v.chave === original.chave));
+    itens.forEach(item => {
+      const v = vinculosOrig.find(x => itemNFMatch(x, item));
+      const est = v?.estoqueId ? (W.J?.estoque || []).find(p => String(p.id) === String(v.estoqueId)) : null;
+      const qtd = Number(item.quantidade || item.qtd || v?.qtd || 0) || 0;
+      if (v?.id) batch.update(W.db.collection('nf_itens_vinculos').doc(v.id), { devolvido:true, devolvidoEm:agora, nfDevolucaoId:nfRef.id, motivoDevolucao:motivo, updatedAt:agora });
+      if (v?.estoqueId && est && !v.estoqueBaixadoAutomatico) batch.update(W.db.collection('estoqueItems').doc(v.estoqueId), { qtd:Math.max(0, (Number(est.qtd)||0) - qtd), updatedAt:agora });
+      batch.set(W.db.collection('estoque_movimentos').doc(), cleanFirestoreNF({ tenantId:W.J.tid, estoqueId:v?.estoqueId || '', tipo:'devolucao_nf_fornecedor', nfId:nfRef.id, nfNumero:nfPayload.numero, nfOriginalId:original.id || '', nfOriginalNumero:original.numero || '', codigo:item.codigo || item.codigoFornecedor || v?.codigo || '', desc:item.descricao || item.desc || v?.desc || '', qtd:-Math.abs(qtd), custo:item.valorUnitario || item.custo || v?.custo || 0, total:item.valorLiquido || item.total || v?.total || 0, osId:v?.osId || item.osId || '', placa:v?.placa || item.placa || '', motivo, createdAt:agora, usuario:W.J?.nome || 'Sistema' }));
+    });
+    const removidasOS = removerPecasReaisDevolucaoBatch(batch, original, itens, nfPayload, motivo);
+    const totalNF = Number(nfPayload.totalNF || nfPayload.totalItens || 0) || 0;
+    batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'Entrada', status:'Pendente', desc:`Credito/abatimento devolucao NF ${nfPayload.numero || 's/n'} da NF ${original.numero || original.id || ''}`, valor:totalNF, pgto:'Abatimento devolucao', venc:isoToday(), notaFiscalId:nfRef.id, nfOriginalId:original.id || '', fornecedorId, createdAt:agora });
+    batch.set(W.db.collection('lixeira_auditoria').doc(), { tenantId:W.J.tid, modulo:'ESTOQUE/NF', acao:`NF de devolucao ${nfPayload.numero || nfRef.id} vinculada a NF ${original.numero || original.id}`, usuario:W.J?.nome || 'Sistema', entidade:'notas_fiscais_entrada', entidadeId:nfRef.id, motivo, itens, removidasOS, ts:agora });
+    await batch.commit();
+    if(W.toast) W.toast(`NF de devolucao registrada. ${removidasOS} peca(s) removida(s) de O.S. quando aplicavel.`, 'ok');
+    if(typeof W.fecharModal === 'function') W.fecharModal('modalNF');
+  }
   W.salvarNF = async function(){
+    const nfEditId = D.getElementById('nfEditId')?.value || '';
+    if ((nfEditId || W._thiaModoNF === 'edicao_nf') && typeof W.salvarEdicaoNF === 'function') {
+      return W.salvarEdicaoNF();
+    }
+    if (nfEditId || W._thiaModoNF === 'edicao_nf') {
+      if (W.toast) W.toast('Modo edicao de NF ativo. Nova entrada bloqueada para evitar duplicidade de estoque, O.S. e financeiro.', 'warn');
+      return;
+    }
     const itens = collectItens();
-    if(!itens.length){ if(W.toast) W.toast('⚠ Adicione ao menos um item','warn'); return; }
-    if(!W.db || !W.J?.tid){ alert('Banco de dados ainda não carregado.'); return; }
+    if(!itens.length){ if(W.toast) W.toast('âš  Adicione ao menos um item','warn'); return; }
+    if(!W.db || !W.J?.tid){ alert('Banco de dados ainda nÃ£o carregado.'); return; }
     const nfe = W._nfeProData || null;
     const batch = W.db.batch();
     const fornecedorId = await ensureFornecedor(batch, nfe);
@@ -902,6 +1006,10 @@
       itens, rawXml:nfe?.rawXml || '', createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()
     };
     const fornecedorNome = fornecedorNomeNF(nfe, fornecedorId);
+    if (isNFDevolucao(nfe, itens)) {
+      await salvarNFDevolucao(itens, nfe, fornecedorId, nfPayload);
+      return;
+    }
     const vinculosOS = await registrarPecasReaisOSNF(batch, itens, nfRef, nfPayload, fornecedorId, fornecedorNome);
     batch.set(nfRef, nfPayload);
     for(const item of itens){
@@ -931,20 +1039,20 @@
     if(formaAgrupamentoPeriodo){
       const diasAgr = Math.max(1, parseInt(getVal('nfAgrPeriodoDias') || '7', 10) || 7);
       const vencAgr = getVal('nfAgrVenc') || getVal('nfVenc') || isoToday();
-      const statusAgr = getVal('nfAgrStatus') || 'Pendente';
+      const statusAgr = 'Aguardando boleto agrupado';
       const grupoKey = ['fornecedor', fornecedorId || onlyDigits(nfe?.fornecedor?.cnpj || ''), 'periodo', diasAgr, vencAgr].join('_').replace(/[.#$\[\]\/]/g, '_');
-      batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'SaÃ­da', status:statusAgr, desc:`Agrupamento fornecedor ${diasAgr} dias â€” NF ${nfPayload.numero || 's/n'} â€” ${fornecedorNome || nfe?.fornecedor?.nome || 'Fornecedor'}`, valor:totalNF, pgto:'Agrupamento por periodo', venc:vencAgr, notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, fornecedorNome:fornecedorNome || nfe?.fornecedor?.nome || '', agrupamentoPeriodo:true, agrupamentoDias:diasAgr, agrupamentoVencimento:vencAgr, agrupamentoFornecedorKey:grupoKey, createdAt:new Date().toISOString() });
+      batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'Saida', status:statusAgr, desc:`NF ${nfPayload.numero || 's/n'} aguardando boleto agrupado - ${fornecedorNome || nfe?.fornecedor?.nome || 'Fornecedor'}`, valor:totalNF, pgto:'Agrupamento por periodo', venc:vencAgr, notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, fornecedorNome:fornecedorNome || nfe?.fornecedor?.nome || '', agrupamentoPeriodo:true, aguardaBoletoAgrupado:true, agrupamentoDias:diasAgr, agrupamentoVencimentoPrevisto:vencAgr, agrupamentoFornecedorKey:grupoKey, bloqueadoPagamentoIndividual:true, createdAt:new Date().toISOString() });
     } else if(parcelasFinanceiras.length){
       for(const [idx,p] of parcelasFinanceiras.entries()){
-        batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'Saída', status:statusFinanceiro, desc:`NF ${nfPayload.numero || 's/n'} — ${nfe?.fornecedor?.nome || 'Fornecedor'} (${idx+1}/${parcelasFinanceiras.length})`, valor:p.valor, pgto:forma, venc:p.vencimento || isoToday(), notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, createdAt:new Date().toISOString() });
+        batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'SaÃ­da', status:statusFinanceiro, desc:`NF ${nfPayload.numero || 's/n'} â€” ${nfe?.fornecedor?.nome || 'Fornecedor'} (${idx+1}/${parcelasFinanceiras.length})`, valor:p.valor, pgto:forma, venc:p.vencimento || isoToday(), notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, createdAt:new Date().toISOString() });
       }
     } else {
-      batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'Saída', status:statusFinanceiro, desc:`NF ${nfPayload.numero || 's/n'} — ${nfe?.fornecedor?.nome || 'Fornecedor'}`, valor:totalNF, pgto:forma, venc:getVal('nfVenc') || isoToday(), notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, createdAt:new Date().toISOString() });
+      batch.set(W.db.collection('financeiro').doc(), { tenantId:W.J.tid, tipo:'SaÃ­da', status:statusFinanceiro, desc:`NF ${nfPayload.numero || 's/n'} â€” ${nfe?.fornecedor?.nome || 'Fornecedor'}`, valor:totalNF, pgto:forma, venc:getVal('nfVenc') || isoToday(), notaFiscalId:nfRef.id, chaveNFe:nfPayload.chave, fornecedorId, createdAt:new Date().toISOString() });
     }
     await batch.commit();
     await salvarRegistrosAuxiliaresNF(vinculosOS);
-    if(W.toast) W.toast(`✓ NF ${nfPayload.numero || 's/n'} lançada com espelho fiscal, estoque e financeiro${vinculosOS.pecas ? `; ${vinculosOS.pecas} peça(s) vinculada(s) em ${vinculosOS.os} O.S.` : ''}`); else alert('NF lançada.');
-    if(typeof W.audit === 'function') W.audit('ESTOQUE/NF', `Entrada NF ${nfPayload.numero || 's/n'} — ${fmtBR(totalNF)} — ${itens.length} item(ns)`);
+    if(W.toast) W.toast(`âœ“ NF ${nfPayload.numero || 's/n'} lanÃ§ada com espelho fiscal, estoque e financeiro${vinculosOS.pecas ? `; ${vinculosOS.pecas} peÃ§a(s) vinculada(s) em ${vinculosOS.os} O.S.` : ''}`); else alert('NF lanÃ§ada.');
+    if(typeof W.audit === 'function') W.audit('ESTOQUE/NF', `Entrada NF ${nfPayload.numero || 's/n'} â€” ${fmtBR(totalNF)} â€” ${itens.length} item(ns)`);
     if(typeof W.fecharModal === 'function') W.fecharModal('modalNF');
   };
   W.buscarCepAutoPro = async function(cep, prefix){
