@@ -570,7 +570,7 @@
     }
     rows.sort((a,b)=>String(b.dataCompra||'').localeCompare(String(a.dataCompra||'')));
     return `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:8px;">${rows.length} uso(s) encontrado(s) para o codigo <b>${esc(termoRaw)}</b>. Exibindo somente a peça pesquisada.</div>
-      <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Codigo / peÃ§a</th><th>Usado em</th><th>O.S.</th><th>NF / fornecedor</th><th>Compra</th><th>Qtd / baixa</th></tr></thead><tbody>
+      <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Codigo / peça</th><th>Usado em</th><th>O.S.</th><th>NF / fornecedor</th><th>Compra</th><th>Qtd / baixa</th></tr></thead><tbody>
       ${rows.map(r => `<tr>
         <td><b>${esc(r.codigo || termoRaw)}</b><br>${esc(r.desc || '-')}<br><small>${esc(r.marca || '')}</small></td>
         <td><b>${esc(r.placa || '-')}</b> ${r.prefixo ? '<span class="op-chip">'+esc(r.prefixo)+'</span>' : ''}<br>${esc(r.veiculo || '-')}<br><small>${esc(r.cliente || '')}</small></td>
@@ -749,7 +749,7 @@
         return `<details class="op-card hist-os-card"${aberta}>
           <summary style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">
             <div><b style="color:var(--cyan);font-family:var(--fm);">OS #${esc(String(o.numero || o.id || '').slice(-6).toUpperCase())}</b> <span class="op-chip">${esc(v.prefixo || o.prefixo || '')}</span> <span class="op-chip">${esc(o.placa || v.placa || '')}</span> <span class="op-chip">${esc(v.modelo || o.veiculo || '')}</span></div>
-            <div style="font-family:var(--fm);font-size:.68rem;color:var(--muted);">${esc(c.nome || o.cliente || '')} - ${esc(o.status || '')} <span class="hist-os-chevron">â€º</span></div>
+            <div style="font-family:var(--fm);font-size:.68rem;color:var(--muted);">${esc(c.nome || o.cliente || '')} - ${esc(o.status || '')} <span class="hist-os-chevron">›</span></div>
           </summary>
           <div style="margin-top:10px;">
             ${renderGroup('SERVICOS APROVADOS', g.servAprov, 'ok')}
@@ -789,7 +789,7 @@
     panel.innerHTML = `
       <div class="j-card-header">
         <div class="j-card-title">NOTAS FISCAIS / ENTRADAS / SAIDAS</div>
-        <div class="j-collapse-tools"><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir notas fiscais">âˆ’</button></div>
+        <div class="j-collapse-tools"><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir notas fiscais">−</button></div>
       </div>
       <div class="j-card-body">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -1080,7 +1080,7 @@
     const forma = byId('osPgtoForma')?.value || '';
     const parcelas = byId('osPgtoParcelas');
     if (!parcelas) return;
-    if (!/(boleto|crediario|crediÃ¡rio|credito|crÃ©dito|parcel)/i.test(forma)) parcelas.value = '1';
+    if (!/(boleto|crediario|crediário|credito|crédito|parcel)/i.test(forma)) parcelas.value = '1';
   }
   function wrapSalvarOS() {
     const old = W.salvarOS;
@@ -1114,12 +1114,12 @@
   }
   function regraServicos(txt) {
     const regras = [
-      { rx:/pastilha|disco|freio|sapata|cilindro|pinca|pinÃ§a/, serv:['Inspecao e reparo do sistema de freio','Sangria/teste do sistema de freio'] },
-      { rx:/amortec|batente|coifa|mola|bandeja|pivo|pivÃ´|bieleta|coxim/, serv:['Diagnostico e substituicao de componentes da suspensao','Alinhamento apos servico de suspensao'] },
-      { rx:/bateria|alternador|arranque|motor de partida|lampada|lÃ¢mpada|farol|sensor/, serv:['Diagnostico eletrico e teste de carga'] },
-      { rx:/bomba combust|filtro|oleo|Ã³leo|vela|correia|motor/, serv:['Diagnostico do sistema de motor/alimentacao'] },
+      { rx:/pastilha|disco|freio|sapata|cilindro|pinca|pinça/, serv:['Inspecao e reparo do sistema de freio','Sangria/teste do sistema de freio'] },
+      { rx:/amortec|batente|coifa|mola|bandeja|pivo|pivô|bieleta|coxim/, serv:['Diagnostico e substituicao de componentes da suspensao','Alinhamento apos servico de suspensao'] },
+      { rx:/bateria|alternador|arranque|motor de partida|lampada|lâmpada|farol|sensor/, serv:['Diagnostico eletrico e teste de carga'] },
+      { rx:/bomba combust|filtro|oleo|óleo|vela|correia|motor/, serv:['Diagnostico do sistema de motor/alimentacao'] },
       { rx:/radiador|ventoinha|reservatorio|mangueira|agua|arrefecimento/, serv:['Diagnostico e reparo do sistema de arrefecimento'] },
-      { rx:/embreagem|cambio|cÃ¢mbio|homocinet|semieixo/, serv:['Diagnostico do sistema de transmissao'] },
+      { rx:/embreagem|cambio|câmbio|homocinet|semieixo/, serv:['Diagnostico do sistema de transmissao'] },
       { rx:/pneu|roda|cubo|rolamento/, serv:['Balanceamento/conferencia de rodas e cubos'] }
     ];
     const out = [];
@@ -1204,7 +1204,7 @@
         return `Pacotes de boletos:<br>${pac.slice(0,15).map(p=>`- ${esc(p.numero||p.id)} | ${esc(p.fornecedorNome||'-')} | ${esc(p.inicio||'-')} a ${esc(p.fim||'-')} | ${moeda(p.total||0)} | ${(p.titulos||[]).length} titulo(s)`).join('<br>')}`;
       }
       if (/onde.*peca|historico.*peca|estoque.*peca|usada/.test(q)) {
-        const termo = q.replace(/onde|peca|peÃ§a|historico|estoque|usada|foi|em|qual/g,'').trim();
+        const termo = q.replace(/onde|peca|peça|historico|estoque|usada|foi|em|qual/g,'').trim();
         const vinc = (J().nfItensVinculos || []).filter(v => norm([v.desc,v.codigo,v.codigoFornecedor,v.codigoComercial,v.placa,v.nfNumero].join(' ')).includes(termo));
         if (!vinc.length) return 'Nao ha vinculo de peca localizado nos dados carregados.';
         return `Vinculos encontrados:<br>${vinc.slice(0,20).map(v=>`- ${esc(v.codigo||v.codigoFornecedor||'')} ${esc(v.desc||'-')} | NF ${esc(v.nfNumero||'-')} | ${esc(v.placa||'')} ${v.osId?'OS #'+esc(String(v.osId).slice(-6).toUpperCase()):''} | baixa auto: ${v.estoqueBaixadoAutomatico?'sim':'nao'}`).join('<br>')}`;

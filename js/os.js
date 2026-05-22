@@ -734,7 +734,8 @@ window.renderKanban = function() {
     const c = J.clientes.find(x => x.id === o.clienteId) || { nome: o.cliente };
     
     const identBusca = identidadeVeiculoOS(o, v);
-    if (busca && !(v.placa||'').toLowerCase().includes(busca) && !(identBusca.prefixo||'').toLowerCase().includes(busca) && !(c.nome||'').toLowerCase().includes(busca) && !(o.placa||'').toLowerCase().includes(busca)) return;
+    const modeloBusca = modeloVeiculoOS(o, v).toLowerCase();
+    if (busca && !(v.placa||'').toLowerCase().includes(busca) && !(identBusca.prefixo||'').toLowerCase().includes(busca) && !modeloBusca.includes(busca) && !(c.nome||'').toLowerCase().includes(busca) && !(o.placa||'').toLowerCase().includes(busca)) return;
     if (filtroNicho && v.tipo !== filtroNicho) return;
     if (st === 'Entregue' && buscaEntregues) {
       const txtEntregue = [identBusca.placa, identBusca.prefixo, c.nome, o.cliente, o.desc, o.finalizacaoLabel, o.finalizacaoOS, o.entreguePara]
@@ -767,6 +768,7 @@ window.renderKanban = function() {
       const ident = identidadeVeiculoOS(os, v);
       const placaFmt = esc(ident.placa || 'S/PLACA');
       const prefixoFmt = esc(ident.prefixo || '');
+      const modeloFmt = esc(modeloVeiculoOS(os, v));
       const UOS = window.JarvisOSUtils || window.JOS || {};
       const resumoValores = UOS.getBudgetSummary
         ? UOS.getBudgetSummary(os, c, J.financeiro)
@@ -803,6 +805,7 @@ window.renderKanban = function() {
             <div>
               ${prefixoFmt ? `<div style="font-family:var(--fm);font-size:.58rem;color:var(--warn);letter-spacing:.8px;font-weight:800;margin-bottom:2px;">PREFIXO ${prefixoFmt}</div>` : ''}
               <div class="k-placa" style="color:${cor};margin:0;font-size:1rem;">${placaFmt}</div>
+              ${modeloFmt ? `<div class="k-modelo" title="${modeloFmt}" style="font-family:var(--fm);font-size:.62rem;color:var(--muted2);letter-spacing:.45px;font-weight:700;margin-top:2px;max-width:126px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${modeloFmt}</div>` : ''}
             </div>
             ${btnExcluir}
         </div>
@@ -1548,6 +1551,31 @@ function identidadeVeiculoOS(os, veic) {
     prefixo: String(prefixo || '').toUpperCase().trim(),
     label: [prefixo, placaFormatadaOS(placa)].filter(Boolean).join(' / ')
   };
+}
+
+function modeloVeiculoOS(os, veic) {
+  const v = veic || {};
+  const o = os || {};
+  const placaRaw = String(o.placa || v.placa || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const candidatos = [
+    v.modelo,
+    v.nome,
+    o.veiculoSnapshot?.modelo,
+    o.veiculoModelo,
+    o.modeloVeiculo,
+    o.modelo,
+    o.veiculoNome,
+    o.veiculo
+  ];
+  for (const item of candidatos) {
+    const txt = String(item || '').trim().replace(/\s+/g, ' ');
+    if (!txt) continue;
+    const norm = txt.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!norm || norm === placaRaw || norm === String(o.veiculoId || '').toUpperCase().replace(/[^A-Z0-9]/g, '')) continue;
+    if (/^(VEICULO|VEÍCULO|CARRO|MOTO|BICICLETA)$/i.test(txt)) continue;
+    return txt;
+  }
+  return '';
 }
 
 window.atualizarIdentificacaoVeiculoOS = function(osFallback) {
