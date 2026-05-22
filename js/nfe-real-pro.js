@@ -304,6 +304,12 @@
     const row = sel.closest('.nf-real-row');
     const wrap = row?.querySelector('.nf-os-wrap');
     if(wrap) wrap.style.display = sel.value === 'os' ? 'block' : 'none';
+    if(sel.value !== 'os'){
+      const osSel = row?.querySelector('.nf-os-select');
+      const osBusca = row?.querySelector('.nf-os-busca');
+      if(osSel) osSel.value = '';
+      if(osBusca) osBusca.value = '';
+    }
   };
   W.nfProFiltrarOS = function(input){
     const row = input?.closest?.('.nf-real-row');
@@ -649,9 +655,11 @@
     return Array.from(D.querySelectorAll('#containerItensNF .nf-real-row')).map(row => {
       let base = {};
       try{ base = JSON.parse(row.querySelector('.nf-json')?.value || '{}'); }catch(_){ base = {}; }
+      const destinoAtual = row.querySelector('.nf-finalidade')?.value || 'estoque';
       const osSel = row.querySelector('.nf-os-select');
-      const osId = osSel?.value || '';
-      const osOpt = osSel?.selectedOptions?.[0];
+      const osId = destinoAtual === 'os' ? (osSel?.value || '') : '';
+      const osOpt = destinoAtual === 'os' ? osSel?.selectedOptions?.[0] : null;
+      const vinculoLivre = row.querySelector('.nf-vinculo')?.value || '';
       return Object.assign({}, base, {
         codigoFornecedor: row.querySelector('.nf-codforn')?.value || base.codigoFornecedor || base.codigo || '',
         codigoComercial: row.querySelector('.nf-codigo')?.value || base.codigoComercial || base.oem || '',
@@ -669,8 +677,10 @@
         ncm: row.querySelector('.nf-ncm-input')?.value || base.ncm || '',
         cfop: row.querySelector('.nf-cfop-input')?.value || base.cfop || '',
         cest: row.querySelector('.nf-cest-input')?.value || base.cest || '',
-        destino: row.querySelector('.nf-finalidade')?.value || 'estoque', finalidade: row.querySelector('.nf-finalidade')?.value || 'estoque',
-        osId, placa: osOpt?.dataset?.placa || '', vinculo: row.querySelector('.nf-vinculo')?.value || osId || '',
+        destino: destinoAtual, finalidade: destinoAtual,
+        osId,
+        placa: destinoAtual === 'os' ? (osOpt?.dataset?.placa || '') : (destinoAtual === 'placa' ? normalizePlateNF(vinculoLivre) : ''),
+        vinculo: vinculoLivre || osId || '',
         valorLiquido: Math.max(parseNum(row.querySelector('.nf-qtd')?.value) * parseNum(row.querySelector('.nf-custo')?.value) - parseNum(row.querySelector('.nf-descvalor')?.value), 0)
       });
     }).filter(x => x.descricao);
@@ -690,9 +700,11 @@
   }
   function destinoVinculadoNF(item){
     const destino = String(item?.destino || item?.finalidade || '').toLowerCase();
+    if(item?.osId || destino === 'os' || destino === 'placa') return true;
+    if(destino) return false;
     const placa = normalizePlateNF(item?.placa || item?.vinculo || '');
     const vinculo = String(item?.vinculo || '');
-    return !!(item?.osId || destino === 'os' || destino === 'placa' || /\bos\b|o\.s\.|ordem/i.test(vinculo) || /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa));
+    return !!(/\bos\b|o\.s\.|ordem/i.test(vinculo) || /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa));
   }
   function firebaseFieldValueNF(){
     try {
