@@ -30,6 +30,37 @@
   function placaNorm(v) {
     return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
+  function vinculoFiscalReal(v) {
+    const status = norm(v?.status || v?.statusVinculo || '');
+    if (/(cancelad|excluid|estornad)/.test(status)) return false;
+    const destino = String(v?.finalidade || v?.destino || '').toLowerCase().trim();
+    if (destino === 'os' || destino === 'placa') return true;
+    if (destino) return v?.estoqueBaixadoAutomatico === true;
+    return !!(v?.estoqueBaixadoAutomatico || v?.osId || v?.placa);
+  }
+  function destinoFiscalResumo(v) {
+    if (!vinculoFiscalReal(v)) return 'Estoque';
+    const placa = v?.placa ? placaNorm(v.placa) : '';
+    const os = v?.osId ? `OS #${String(v.osId).slice(-6).toUpperCase()}` : '';
+    return [placa, os].filter(Boolean).join(' ') || 'Vinculado';
+  }
+  function pecaRealFiscalValida(p) {
+    const nfId = String(p?.nfId || '').trim();
+    const nfNumero = String(p?.nfNumero || p?.nf || p?.notaFiscal || '').trim();
+    if (!nfId && !nfNumero) return true;
+    const codP = codigoPecaNormalizado(p?.codigoFornecedor || p?.codigo || p?.codigoComercial || p?.oem || '');
+    const descP = norm(p?.desc || p?.descricao || '');
+    const candidatos = (J().nfItensVinculos || []).filter(v =>
+      (!nfId || String(v.nfId || '').trim() === nfId) &&
+      (!nfNumero || String(v.nfNumero || '').trim() === nfNumero)
+    );
+    const vinc = candidatos.find(v => {
+      const codV = codigoPecaNormalizado(v.codigoFornecedor || v.codigo || v.codigoComercial || v.oem || '');
+      const descV = norm(v.desc || v.descricao || '');
+      return (codP && codV && codP === codV) || (descP && descV && descP === descV);
+    });
+    return !vinc || vinculoFiscalReal(vinc);
+  }
   function todayISO() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -499,6 +530,7 @@
     };
     (J().nfItensVinculos || []).forEach(v => {
       if (!itemTemCodigoPeca(v, codigo)) return;
+      if (!vinculoFiscalReal(v)) return;
       const os = (J().os || []).find(o => o.id === v.osId) || {};
       const veic = veiculoByOS(os);
       const cli = (J().clientes || []).find(c => c.id === (os.clienteId || veic.clienteId)) || {};
@@ -524,6 +556,7 @@
       const veic = veiculoByOS(os);
       const cli = (J().clientes || []).find(c => c.id === (os.clienteId || veic.clienteId)) || {};
       (Array.isArray(os.pecasReais) ? os.pecasReais : []).forEach(p => {
+        if (!pecaRealFiscalValida(p)) return;
         if (!itemTemCodigoPeca(p, codigo)) return;
         add('OS/PECAS REAIS', {
           codigo: p.codigoFornecedor || p.codigo || p.codigoComercial || p.oem || termoRaw,
@@ -570,7 +603,7 @@
     }
     rows.sort((a,b)=>String(b.dataCompra||'').localeCompare(String(a.dataCompra||'')));
     return `<div style="font-family:var(--fm);font-size:.65rem;color:var(--muted);margin-bottom:8px;">${rows.length} uso(s) encontrado(s) para o codigo <b>${esc(termoRaw)}</b>. Exibindo somente a peça pesquisada.</div>
-      <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Codigo / peÃ§a</th><th>Usado em</th><th>O.S.</th><th>NF / fornecedor</th><th>Compra</th><th>Qtd / baixa</th></tr></thead><tbody>
+      <div class="op-table-wrap"><table class="op-table"><thead><tr><th>Codigo / peça</th><th>Usado em</th><th>O.S.</th><th>NF / fornecedor</th><th>Compra</th><th>Qtd / baixa</th></tr></thead><tbody>
       ${rows.map(r => `<tr>
         <td><b>${esc(r.codigo || termoRaw)}</b><br>${esc(r.desc || '-')}<br><small>${esc(r.marca || '')}</small></td>
         <td><b>${esc(r.placa || '-')}</b> ${r.prefixo ? '<span class="op-chip">'+esc(r.prefixo)+'</span>' : ''}<br>${esc(r.veiculo || '-')}<br><small>${esc(r.cliente || '')}</small></td>
@@ -603,15 +636,17 @@
     (J().notasFiscaisEntrada || []).forEach(n => {
       (Array.isArray(n.itens) ? n.itens : []).forEach(i => {
         if (!itemTemCodigoPeca(i, codigo)) return;
+        const destinoItem = String(i.destino || i.finalidade || 'estoque').toLowerCase();
+        const itemVinculado = destinoItem === 'os' || destinoItem === 'placa';
         add('ENTRADA', 'NF', {
           codigo: i.codigoFornecedor || i.codigo || i.codigoComercial || termoRaw,
           desc: i.descricao || i.desc || '',
           marca: i.marca || '',
-          placa: i.placa || '',
+          placa: itemVinculado ? (i.placa || '') : '',
           prefixo: '',
-          veiculo: 'Estoque / entrada fiscal',
+          veiculo: itemVinculado ? 'Entrada fiscal vinculada' : 'Estoque / entrada fiscal',
           cliente: '',
-          osId: i.osId || '',
+          osId: itemVinculado ? (i.osId || '') : '',
           nfId: n.id || '',
           nfNumero: n.numero || i.nfNumero || '',
           fornecedor: n.fornecedorSnapshot?.nome || n.fornecedorNome || i.fornecedor || '',
@@ -625,6 +660,7 @@
     });
     (J().nfItensVinculos || []).forEach(v => {
       if (!itemTemCodigoPeca(v, codigo)) return;
+      if (!vinculoFiscalReal(v)) return;
       const os = (J().os || []).find(o => o.id === v.osId) || {};
       const veic = veiculoByOS(os);
       const cli = (J().clientes || []).find(c => c.id === (os.clienteId || veic.clienteId)) || {};
@@ -651,6 +687,7 @@
       const veic = veiculoByOS(os);
       const cli = (J().clientes || []).find(c => c.id === (os.clienteId || veic.clienteId)) || {};
       (Array.isArray(os.pecasReais) ? os.pecasReais : []).forEach(p => {
+        if (!pecaRealFiscalValida(p)) return;
         if (!itemTemCodigoPeca(p, codigo)) return;
         add('SAIDA', 'OS/PECAS REAIS', {
           codigo: p.codigoFornecedor || p.codigo || p.codigoComercial || p.oem || termoRaw,
@@ -749,7 +786,7 @@
         return `<details class="op-card hist-os-card"${aberta}>
           <summary style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">
             <div><b style="color:var(--cyan);font-family:var(--fm);">OS #${esc(String(o.numero || o.id || '').slice(-6).toUpperCase())}</b> <span class="op-chip">${esc(v.prefixo || o.prefixo || '')}</span> <span class="op-chip">${esc(o.placa || v.placa || '')}</span> <span class="op-chip">${esc(v.modelo || o.veiculo || '')}</span></div>
-            <div style="font-family:var(--fm);font-size:.68rem;color:var(--muted);">${esc(c.nome || o.cliente || '')} - ${esc(o.status || '')} <span class="hist-os-chevron">â€º</span></div>
+            <div style="font-family:var(--fm);font-size:.68rem;color:var(--muted);">${esc(c.nome || o.cliente || '')} - ${esc(o.status || '')} <span class="hist-os-chevron">›</span></div>
           </summary>
           <div style="margin-top:10px;">
             ${renderGroup('SERVICOS APROVADOS', g.servAprov, 'ok')}
@@ -789,7 +826,7 @@
     panel.innerHTML = `
       <div class="j-card-header">
         <div class="j-card-title">NOTAS FISCAIS / ENTRADAS / SAIDAS</div>
-        <div class="j-collapse-tools"><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir notas fiscais">âˆ’</button></div>
+        <div class="j-collapse-tools"><button type="button" class="btn-ghost j-collapse-toggle" onclick="window.toggleJarvisCollapse(this)" title="Minimizar ou expandir notas fiscais">−</button></div>
       </div>
       <div class="j-card-body">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -815,8 +852,9 @@
       const d = r.doc;
       if (r.kind === 'entrada') {
         const vinc = (J().nfItensVinculos || []).filter(x => x.nfId === d.id);
+        const vincReais = vinc.filter(vinculoFiscalReal);
         const excluida = d.excluidaAuditada || /excluida|cancelada/i.test(String(d.statusFiscal || d.statusConferencia || ''));
-        return `<tr><td><span class="op-chip ${excluida?'danger':'ok'}">${excluida?'Excluida auditada':'Entrada NF'}</span></td><td><b>NF ${esc(d.numero || '-')}</b><br><small>${esc(d.chave || '')}</small></td><td>${esc(d.fornecedorSnapshot?.nome || d.fornecedorNome || '-')}</td><td>${esc(d.dataNF || d.createdAt || '-')}</td><td>${moeda(d.totalNF || d.totalItens || 0)}<br><small>${(d.itens||[]).length} item(ns)</small></td><td>${vinc.filter(x=>x.osId||x.placa).length} vinculo(s)<br><small>${vinc.filter(x=>x.estoqueBaixadoAutomatico).length} baixa(s) auto</small></td><td><button class="btn-ghost" onclick="window.editarDocFiscal('${esc(d.id)}')">EDITAR</button>${excluida?'':`<button class="btn-danger" onclick="window.excluirNFAuditada ? window.excluirNFAuditada('${esc(d.id)}') : window.excluirNFDef('${esc(d.id)}')" style="margin-left:4px;">EXCLUIR</button>`}</td></tr>`;
+        return `<tr><td><span class="op-chip ${excluida?'danger':'ok'}">${excluida?'Excluida auditada':'Entrada NF'}</span></td><td><b>NF ${esc(d.numero || '-')}</b><br><small>${esc(d.chave || '')}</small></td><td>${esc(d.fornecedorSnapshot?.nome || d.fornecedorNome || '-')}</td><td>${esc(d.dataNF || d.createdAt || '-')}</td><td>${moeda(d.totalNF || d.totalItens || 0)}<br><small>${(d.itens||[]).length} item(ns)</small></td><td>${vincReais.length} vinculo(s)<br><small>${vinc.filter(x=>x.estoqueBaixadoAutomatico).length} baixa(s) auto</small></td><td><button class="btn-ghost" onclick="window.editarDocFiscal('${esc(d.id)}')">EDITAR</button>${excluida?'':`<button class="btn-danger" onclick="window.excluirNFAuditada ? window.excluirNFAuditada('${esc(d.id)}') : window.excluirNFDef('${esc(d.id)}')" style="margin-left:4px;">EXCLUIR</button>`}</td></tr>`;
       }
       if (r.kind === 'saida') {
         return `<tr><td><span class="op-chip">Saida/venda</span></td><td><b>${esc(String(d.id||'').slice(-6).toUpperCase())}</b></td><td>${esc(d.clienteNome || '-')}</td><td>${esc(d.data || d.createdAt || '-')}</td><td>${moeda(d.total || 0)}<br><small>${(d.itens||[]).length} item(ns)</small></td><td>${esc(d.canal || '')}</td><td>-</td></tr>`;
@@ -849,10 +887,14 @@
         A nota XML deve ser preservada. Edite apenas conferencia, vinculos internos, estoque e financeiro com auditoria.
       </div>
       <div class="op-table-wrap" style="margin-top:8px;"><table class="op-table"><thead><tr><th>Codigo</th><th>Descricao</th><th>NCM/CFOP/CEST</th><th>Qtd</th><th>Custo</th><th>Destino</th></tr></thead><tbody>
-        ${(n.itens || []).slice(0,80).map(i => `<tr><td>${esc(i.codigoFornecedor || i.codigo || '')}<br><small>${esc(i.codigoComercial || i.oem || '')}</small></td><td>${esc(i.descricao || i.desc || '')}<br><small>${esc(i.marca || '')}</small></td><td>${esc(i.ncm || '-')} / ${esc(i.cfop || '-')} / ${esc(i.cest || '-')}</td><td>${esc(i.quantidade || i.qtd || 1)}</td><td>${moeda(i.valorUnitario || i.custo || 0)}</td><td>${esc(i.destino || i.finalidade || 'estoque')} ${esc(i.placa || i.vinculo || '')}</td></tr>`).join('') || '<tr><td colspan="6">Sem itens registrados.</td></tr>'}
+        ${(n.itens || []).slice(0,80).map(i => {
+          const dest = String(i.destino || i.finalidade || 'estoque').toLowerCase();
+          const complemento = (dest === 'os' || dest === 'placa') ? (i.placa || i.vinculo || '') : '';
+          return `<tr><td>${esc(i.codigoFornecedor || i.codigo || '')}<br><small>${esc(i.codigoComercial || i.oem || '')}</small></td><td>${esc(i.descricao || i.desc || '')}<br><small>${esc(i.marca || '')}</small></td><td>${esc(i.ncm || '-')} / ${esc(i.cfop || '-')} / ${esc(i.cest || '-')}</td><td>${esc(i.quantidade || i.qtd || 1)}</td><td>${moeda(i.valorUnitario || i.custo || 0)}</td><td>${esc(dest || 'estoque')} ${esc(complemento)}</td></tr>`;
+        }).join('') || '<tr><td colspan="6">Sem itens registrados.</td></tr>'}
       </tbody></table></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
-        <div style="border:1px solid var(--border);border-radius:4px;padding:10px;background:var(--surf2);"><b>Vinculos / baixas</b><br>${vinculos.slice(0,40).map(v=>`- ${esc(v.codigoFornecedor || v.codigo || '')} ${esc(v.desc || '')} | ${esc(v.placa || '-')} ${v.osId ? 'OS #' + esc(String(v.osId).slice(-6).toUpperCase()) : ''} | baixa: ${v.estoqueBaixadoAutomatico?'sim':'nao'}`).join('<br>') || 'Nenhum vinculo registrado.'}</div>
+        <div style="border:1px solid var(--border);border-radius:4px;padding:10px;background:var(--surf2);"><b>Vinculos / baixas</b><br>${vinculos.slice(0,40).map(v=>`- ${esc(v.codigoFornecedor || v.codigo || '')} ${esc(v.desc || '')} | ${esc(destinoFiscalResumo(v))} | baixa: ${v.estoqueBaixadoAutomatico?'sim':'nao'}`).join('<br>') || 'Nenhum vinculo registrado.'}</div>
         <div style="border:1px solid var(--border);border-radius:4px;padding:10px;background:var(--surf2);"><b>Financeiro da NF</b><br>${fins.slice(0,40).map(f=>`- ${esc(f.desc || f.id)} | ${moeda(f.valor || 0)} | ${esc(f.venc || '')} | ${esc(f.status || '')}${f.pacoteBoletoNumero ? ' | pacote ' + esc(f.pacoteBoletoNumero) : ''}`).join('<br>') || 'Nenhum lancamento vinculado.'}</div>
       </div>`;
     W.abrirModal?.('modalFiscalDocHardening');
@@ -1080,7 +1122,7 @@
     const forma = byId('osPgtoForma')?.value || '';
     const parcelas = byId('osPgtoParcelas');
     if (!parcelas) return;
-    if (!/(boleto|crediario|crediÃ¡rio|credito|crÃ©dito|parcel)/i.test(forma)) parcelas.value = '1';
+    if (!/(boleto|crediario|crediário|credito|crédito|parcel)/i.test(forma)) parcelas.value = '1';
   }
   function wrapSalvarOS() {
     const old = W.salvarOS;
@@ -1114,12 +1156,12 @@
   }
   function regraServicos(txt) {
     const regras = [
-      { rx:/pastilha|disco|freio|sapata|cilindro|pinca|pinÃ§a/, serv:['Inspecao e reparo do sistema de freio','Sangria/teste do sistema de freio'] },
-      { rx:/amortec|batente|coifa|mola|bandeja|pivo|pivÃ´|bieleta|coxim/, serv:['Diagnostico e substituicao de componentes da suspensao','Alinhamento apos servico de suspensao'] },
-      { rx:/bateria|alternador|arranque|motor de partida|lampada|lÃ¢mpada|farol|sensor/, serv:['Diagnostico eletrico e teste de carga'] },
-      { rx:/bomba combust|filtro|oleo|Ã³leo|vela|correia|motor/, serv:['Diagnostico do sistema de motor/alimentacao'] },
+      { rx:/pastilha|disco|freio|sapata|cilindro|pinca|pinça/, serv:['Inspecao e reparo do sistema de freio','Sangria/teste do sistema de freio'] },
+      { rx:/amortec|batente|coifa|mola|bandeja|pivo|pivô|bieleta|coxim/, serv:['Diagnostico e substituicao de componentes da suspensao','Alinhamento apos servico de suspensao'] },
+      { rx:/bateria|alternador|arranque|motor de partida|lampada|lâmpada|farol|sensor/, serv:['Diagnostico eletrico e teste de carga'] },
+      { rx:/bomba combust|filtro|oleo|óleo|vela|correia|motor/, serv:['Diagnostico do sistema de motor/alimentacao'] },
       { rx:/radiador|ventoinha|reservatorio|mangueira|agua|arrefecimento/, serv:['Diagnostico e reparo do sistema de arrefecimento'] },
-      { rx:/embreagem|cambio|cÃ¢mbio|homocinet|semieixo/, serv:['Diagnostico do sistema de transmissao'] },
+      { rx:/embreagem|cambio|câmbio|homocinet|semieixo/, serv:['Diagnostico do sistema de transmissao'] },
       { rx:/pneu|roda|cubo|rolamento/, serv:['Balanceamento/conferencia de rodas e cubos'] }
     ];
     const out = [];
@@ -1204,10 +1246,10 @@
         return `Pacotes de boletos:<br>${pac.slice(0,15).map(p=>`- ${esc(p.numero||p.id)} | ${esc(p.fornecedorNome||'-')} | ${esc(p.inicio||'-')} a ${esc(p.fim||'-')} | ${moeda(p.total||0)} | ${(p.titulos||[]).length} titulo(s)`).join('<br>')}`;
       }
       if (/onde.*peca|historico.*peca|estoque.*peca|usada/.test(q)) {
-        const termo = q.replace(/onde|peca|peÃ§a|historico|estoque|usada|foi|em|qual/g,'').trim();
+        const termo = q.replace(/onde|peca|peça|historico|estoque|usada|foi|em|qual/g,'').trim();
         const vinc = (J().nfItensVinculos || []).filter(v => norm([v.desc,v.codigo,v.codigoFornecedor,v.codigoComercial,v.placa,v.nfNumero].join(' ')).includes(termo));
         if (!vinc.length) return 'Nao ha vinculo de peca localizado nos dados carregados.';
-        return `Vinculos encontrados:<br>${vinc.slice(0,20).map(v=>`- ${esc(v.codigo||v.codigoFornecedor||'')} ${esc(v.desc||'-')} | NF ${esc(v.nfNumero||'-')} | ${esc(v.placa||'')} ${v.osId?'OS #'+esc(String(v.osId).slice(-6).toUpperCase()):''} | baixa auto: ${v.estoqueBaixadoAutomatico?'sim':'nao'}`).join('<br>')}`;
+        return `Vinculos encontrados:<br>${vinc.slice(0,20).map(v=>`- ${esc(v.codigo||v.codigoFornecedor||'')} ${esc(v.desc||'-')} | NF ${esc(v.nfNumero||'-')} | ${esc(destinoFiscalResumo(v))} | baixa auto: ${v.estoqueBaixadoAutomatico?'sim':'nao'}`).join('<br>')}`;
       }
       if (/ajuda|o que voce|o que consegue|comandos/.test(q)) {
         return 'Posso responder localmente sobre: boletos vencendo hoje, contas vencidas, estoque critico, O.S. por placa, notas fiscais importadas, pacotes de boletos, vinculos de pecas por NF/O.S., historico tecnico e inconsistencias de PIX parcelado. Quando faltar contexto, vou pedir placa, modelo, periodo ou cliente.';

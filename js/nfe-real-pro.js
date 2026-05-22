@@ -700,8 +700,9 @@
   }
   function destinoVinculadoNF(item){
     const destino = String(item?.destino || item?.finalidade || '').toLowerCase();
-    if(item?.osId || destino === 'os' || destino === 'placa') return true;
+    if(destino === 'os' || destino === 'placa') return true;
     if(destino) return false;
+    if(item?.osId) return true;
     const placa = normalizePlateNF(item?.placa || item?.vinculo || '');
     const vinculo = String(item?.vinculo || '');
     return !!(/\bos\b|o\.s\.|ordem/i.test(vinculo) || /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placa));
@@ -848,11 +849,7 @@
   async function registrarPecasReaisOSNF(batch, itens, nfRef, nfPayload, fornecedorId, fornecedorNome){
     const porOS = new Map();
     for (const item of itens) {
-      const destino = String(item.destino || item.finalidade || '').toLowerCase();
-      const placaVinculo = normalizePlateNF(item.placa || item.vinculo || '');
-      const vinculoPareceOS = /\bos\b|o\.s\.|ordem/i.test(String(item.vinculo || ''));
-      const vinculoParecePlaca = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(placaVinculo);
-      if (!item.osId && destino !== 'os' && destino !== 'placa' && !vinculoPareceOS && !vinculoParecePlaca) continue;
+      if (!destinoVinculadoNF(item)) continue;
       const os = await resolverOSDestinoNF(item);
       if (!os?.id) continue;
       item.osId = os.id;
