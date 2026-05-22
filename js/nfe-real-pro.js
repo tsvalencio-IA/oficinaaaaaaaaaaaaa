@@ -450,6 +450,43 @@
       Natureza: <b>${esc(nfe.natureza)}</b> · Protocolo: <b>${esc(nfe.protocolo)}</b> · Status: <b>${esc(nfe.statusAutorizacao)} ${esc(nfe.motivoAutorizacao)}</b><br>
       Produtos: <b>R$ ${fmtBR(nfe.totais.vProd)}</b> · Desc.: <b>R$ ${fmtBR(nfe.totais.vDesc)}</b> · IPI: <b>R$ ${fmtBR(nfe.totais.vIPI)}</b> · Total NF: <b>R$ ${fmtBR(nfe.totais.vNF)}</b>`;
   }
+  function ensureTipoOperacaoNF(nfe){
+    let box = $('nfTipoOperacaoBox');
+    if(!box){
+      box = D.createElement('div'); box.id='nfTipoOperacaoBox';
+      box.style.cssText='border:1px solid rgba(0,212,255,.20);background:rgba(0,212,255,.045);border-radius:4px;padding:10px;margin:10px 0;font-family:var(--fm);font-size:.72rem;';
+      $('containerItensNF')?.parentElement?.insertAdjacentElement('beforebegin', box);
+    }
+    const natureza = nfe?.natureza ? `<br><span style="color:var(--muted);">Natureza XML: <b>${esc(nfe.natureza)}</b></span>` : '';
+    box.innerHTML = `
+      <div class="form-row cols-2" style="align-items:end;">
+        <div class="form-group" style="margin:0;">
+          <label class="j-label">Tipo da nota</label>
+          <select class="j-select" id="nfTipoOperacao" onchange="window.nfeProTipoOperacaoChanged && window.nfeProTipoOperacaoChanged()">
+            <option value="entrada">Nota de entrada / compra</option>
+            <option value="saida">Nota de saída</option>
+            <option value="devolucao">Nota de devolução</option>
+            <option value="garantia">Nota de garantia</option>
+            <option value="remessa">Nota de remessa</option>
+            <option value="outro">Outro tipo de nota</option>
+          </select>
+        </div>
+        <div style="color:var(--muted2);line-height:1.45;">O XML não muda o tipo sozinho. Para abater estoque/NF original, selecione <b>Nota de devolução</b>.${natureza}</div>
+      </div>`;
+    if(!$('nfTipoOperacao')?.value) $('nfTipoOperacao').value = 'entrada';
+    return box;
+  }
+  function setTipoOperacaoNF(tipo){
+    ensureTipoOperacaoNF(W._nfeProData || null);
+    const el = $('nfTipoOperacao');
+    if(el) el.value = tipo || 'entrada';
+  }
+  function tipoOperacaoNF(){
+    return String($('nfTipoOperacao')?.value || 'entrada').toLowerCase().trim() || 'entrada';
+  }
+  W.nfeProTipoOperacaoChanged = function(){
+    renderDevolucaoBox(W._nfeProData || null);
+  };
   function renderDevolucaoBox(nfe){
     let box = $('nfDevolucaoBox');
     if(!box){
@@ -563,6 +600,7 @@
     if($('nfVenc')) $('nfVenc').onchange = gerarParcelasManuais;
     mostrarAgrupamentoPeriodoNF(false);
     if(typeof W.popularSelects === 'function') W.popularSelects();
+    ensureTipoOperacaoNF(null); setTipoOperacaoNF('entrada');
     renderFiscalResumo(null); renderDevolucaoBox(null); renderParcels([]); W.adicionarItemNF(); W.checkPgtoNF();
   };
   W.lerXMLNFe = function(event){
@@ -581,6 +619,7 @@
         setVal('nfNumero', nfe.numero); setVal('nfData', nfe.dataEmissao || isoToday());
         preencherFornecedorTemporario(nfe.fornecedor);
         if($('containerItensNF')) $('containerItensNF').innerHTML = nfe.itens.map(rowTemplate).join('');
+        ensureTipoOperacaoNF(nfe); setTipoOperacaoNF('entrada');
         renderFiscalResumo(nfe);
         renderDevolucaoBox(nfe);
         if(nfe.cobranca.duplicatas.length){
@@ -909,6 +948,8 @@
     return ref.id;
   }
   function isNFDevolucao(nfe, itens){
+    const tipo = tipoOperacaoNF();
+    if (tipo) return tipo === 'devolucao';
     const txt = normalizeTextNF([nfe?.natureza, nfe?.finalidade, nfe?.infCpl, nfe?.infAdFisco].join(' '));
     if (txt.includes('devolucao') || String(nfe?.finalidade || '') === '4') return true;
     const arr = Array.isArray(itens) ? itens : [];
@@ -1071,8 +1112,9 @@
     const totalItens = Math.round(itens.reduce((s,i)=>s+(Number(i.valorLiquido)||0),0)*100)/100;
     const totalNF = nfe?.totais?.vNF || totalItens;
     const nfRef = W.db.collection('notas_fiscais_entrada').doc();
+    const tipoOperacao = tipoOperacaoNF();
     const nfPayload = {
-      tenantId: W.J.tid, tipo:'entrada', origem:nfe?'xml_nfe':'manual', fornecedorId,
+      tenantId: W.J.tid, tipo:'entrada', tipoOperacao, tipoNF:tipoOperacao, origem:nfe?'xml_nfe':'manual', fornecedorId,
       numero: getVal('nfNumero') || nfe?.numero || '', serie:nfe?.serie || '', chave:nfe?.chave || '', natureza:nfe?.natureza || '',
       dataNF: getVal('nfData') || nfe?.dataEmissao || isoToday(), totalNF, totalItens,
       totaisFiscais: nfe?.totais || { vNF:totalNF }, cobranca: nfe?.cobranca || {}, pagamentos:nfe?.pagamentos || [], fornecedorSnapshot:nfe?.fornecedor || null,
