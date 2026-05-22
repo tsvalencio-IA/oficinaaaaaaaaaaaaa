@@ -224,7 +224,7 @@
         index,
         codigo: p.codigo || p.cod || '',
         sistema: p.sistemaTabela || p.sistema || '',
-        desc: p.desc || p.descricao || '',
+        desc: p.desc || p.descricao || p.descLivre || p.descricaoPeca || p.nomePeca || p.nome || p.item || '',
         tempo: 0,
         qtd,
         valorUnit,

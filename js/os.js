@@ -189,6 +189,35 @@ function primeiroNomeClienteOS(cliente) {
   return nome ? nome.split(/\s+/)[0] : 'cliente';
 }
 
+function credenciaisPortalClienteOS(os, cliente, veiculo) {
+  const login = String(
+    cliente?.login ||
+    cliente?.usuario ||
+    os?.loginCliente ||
+    os?.login ||
+    os?.placa ||
+    veiculo?.placa ||
+    ''
+  ).trim();
+  const pin = String(
+    cliente?.pin ||
+    cliente?.senha ||
+    cliente?.password ||
+    os?.pin ||
+    os?.senha ||
+    ''
+  ).trim();
+  return { login, pin };
+}
+
+function linhasCredenciaisPortalClienteOS(os, cliente, veiculo) {
+  const cred = credenciaisPortalClienteOS(os, cliente, veiculo);
+  const linhas = [];
+  if (cred.login) linhas.push(`Usuário: *${cred.login}*`);
+  if (cred.pin) linhas.push(`PIN: *${cred.pin}*`);
+  return linhas;
+}
+
 function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
   os = os || {};
   cliente = cliente || {};
@@ -199,6 +228,7 @@ function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
   const veiculoTxt = [placa, modelo].filter(Boolean).join(' - ');
   const oficina = window.J?.tnome || 'oficina';
   const portal = montarLinkPortalClienteOS(os, cliente, veiculo);
+  const credenciaisPortal = linhasCredenciaisPortalClienteOS(os, cliente, veiculo);
   if (status === 'Orcamento_Enviado' || status === 'Orçamento enviado' || status === 'Orcamento enviado') {
     const total = Number(os.total || os.totalAprovado || 0);
     return [
@@ -207,6 +237,7 @@ function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
       `O orçamento do veículo ${veiculoTxt} referente à O.S. ${idCurto ? '#' + idCurto : ''} está disponível pela ${oficina}.`,
       total ? `Total do orçamento: ${total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.` : '',
       `Acesse o portal para conferir e responder: ${portal}`,
+      ...credenciaisPortal,
       '',
       'Se tiver qualquer dúvida, responda por aqui ou pelo portal.'
     ].filter(Boolean).join('\n');
@@ -219,6 +250,7 @@ function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
       `Confirmamos a entrega do veículo ${veiculoTxt} referente à O.S. ${idCurto ? '#' + idCurto : ''} na ${oficina}.`,
       retirado ? `Retirado por: ${retirado}.` : '',
       `Você pode consultar o histórico autorizado pelo portal: ${portal}`,
+      ...credenciaisPortal,
       '',
       'Obrigado pela confiança.'
     ].filter(Boolean).join('\n');
@@ -229,6 +261,7 @@ function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
     `Seu veículo ${veiculoTxt} está pronto para retirada na ${oficina}.`,
     idCurto ? `A O.S. #${idCurto} foi encaminhada para conferência/caixa.` : '',
     `Você pode acompanhar pelo portal: ${portal}`,
+    ...credenciaisPortal,
     '',
     'Quando chegar, procure o atendimento.'
   ].filter(Boolean).join('\n');
@@ -2250,15 +2283,19 @@ window.salvarOS = async function() {
     const sel = row.querySelector('.peca-sel');
     const opt = sel?.options[sel.selectedIndex];
     const estoqueId = sel?.value || '';
+    const codigo = row.querySelector('.peca-codigo')?.value?.trim() || '';
+    const descLivre = row.querySelector('.peca-desc-livre')?.value?.trim() || '';
+    const descPeca = descLivre || (estoqueId ? (opt?.dataset.desc || opt?.text || '') : '');
     const qtd = numBR(row.querySelector('.peca-qtd')?.value || 1) || 1;
     const venda = numBR(row.querySelector('.peca-venda')?.value || 0);
     const custo = numBR(row.querySelector('.peca-custo')?.value || 0);
-    if (!estoqueId && !venda && !custo) return;
+    if (!estoqueId && !venda && !custo && !descPeca && !codigo) return;
     totalPecas += (qtd * venda);
 
     pecas.push({
       estoqueId,
-      desc: estoqueId ? (opt?.dataset.desc || opt?.text || '') : '',
+      codigo,
+      desc: descPeca,
       qtd: qtd, custo: custo, venda: venda
     });
   });
@@ -3331,6 +3368,8 @@ window.gerarPDFOS = async function() {
     }
   });
 
+  const pecasTelaPDF = typeof window.pecasCotacaoDaTelaOS === 'function' ? (window.pecasCotacaoDaTelaOS() || []) : [];
+  const pecasTelaPorKeyPDF = new Map(pecasTelaPDF.map(it => [it.key, it]));
   const aprovacaoPDFAtiva = U.hasApproval?.(osAtual);
   let itensNaoAprovadosPDF = [];
   if (aprovacaoPDFAtiva && U.buildBudgetItems && U.getApprovedKeys) {
@@ -3349,8 +3388,14 @@ window.gerarPDFOS = async function() {
         servicos.push({ codigo: it.codigo || '-', sistema: it.sistema || '-', tipoVeiculo: '-', desc: it.desc || '-', tempo: numBR(it.tempo || 0), valorHora: numBR(it.valorHora || 0), descPct: descMO, total: numBR(it.valorFinal || 0), categoria });
         totalServicos += numBR(it.valorFinal || 0);
       } else {
-        pecas.push([it.codigo || 'sem oem', it.desc || '-', it.qtd || 1, moedaPdf(it.valorUnit || 0), descPeca ? (descPeca * 100).toFixed(1).replace('.', ',') + '%' : '0,0%', moedaPdf(it.valorFinal || 0)]);
-        totalPecas += numBR(it.valorFinal || 0);
+        const tela = pecasTelaPorKeyPDF.get(it.key) || {};
+        const codigoItem = it.codigo || tela.codigo || 'sem oem';
+        const descItem = it.desc || tela.desc || '-';
+        const qtdItem = it.qtd || tela.qtd || 1;
+        const valorUnitItem = it.valorUnit || tela.valorUnit || 0;
+        const valorFinalItem = it.valorFinal || tela.valorFinal || 0;
+        pecas.push([codigoItem, descItem, qtdItem, moedaPdf(valorUnitItem), descPeca ? (descPeca * 100).toFixed(1).replace('.', ',') + '%' : '0,0%', moedaPdf(valorFinalItem)]);
+        totalPecas += numBR(valorFinalItem || 0);
       }
     });
   }
@@ -3514,7 +3559,10 @@ window.gerarPDFOS = async function() {
     doc.autoTable({
       startY: y,
       head: [['Tipo', 'Código', 'Descrição', 'Valor original']],
-      body: itensNaoAprovadosPDF.map(it => [it.labelTipo || it.tipo, it.codigo || '-', it.desc || '-', moedaPdf(it.valorFinal || 0)]),
+      body: itensNaoAprovadosPDF.map(it => {
+        const tela = it.tipo === 'peca' ? (pecasTelaPorKeyPDF.get(it.key) || {}) : {};
+        return [it.labelTipo || it.tipo, it.codigo || tela.codigo || '-', it.desc || tela.desc || '-', moedaPdf(it.valorFinal || tela.valorFinal || 0)];
+      }),
       theme: 'grid',
       margin: { left: margem, right: margem },
       styles: { fontSize: 7, cellPadding: 1.5, lineColor: [190,198,210], lineWidth: 0.12, overflow: 'linebreak' },
