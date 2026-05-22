@@ -218,6 +218,26 @@ function linhasCredenciaisPortalClienteOS(os, cliente, veiculo) {
   return linhas;
 }
 
+function descricaoPecaGeradaSistemaOS(value) {
+  const n = String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return n === 'peca' || n === 'peca cilia' || n === 'peca sem descricao';
+}
+
+function descricaoPecaLinhaOS(row, opt, estoqueId) {
+  const manual = row?.querySelector?.('.peca-desc-livre')?.value?.trim() || '';
+  if (manual) return manual;
+  if (!estoqueId) return '';
+  const dataDesc = opt?.dataset?.desc || '';
+  if (dataDesc) return String(dataDesc).trim();
+  return String(opt?.text || '')
+    .replace(/^\[[^\]]+\]\s*/, '')
+    .replace(/\s+[—-]\s+R\$\s*[\d.,]+.*$/i, '')
+    .trim();
+}
+
 function montarMensagemStatusClienteOS(os, status, cliente, veiculo) {
   os = os || {};
   cliente = cliente || {};
@@ -2284,8 +2304,7 @@ window.salvarOS = async function() {
     const opt = sel?.options[sel.selectedIndex];
     const estoqueId = sel?.value || '';
     const codigo = row.querySelector('.peca-codigo')?.value?.trim() || '';
-    const descLivre = row.querySelector('.peca-desc-livre')?.value?.trim() || '';
-    const descPeca = descLivre || (estoqueId ? (opt?.dataset.desc || opt?.text || '') : '');
+    const descPeca = descricaoPecaLinhaOS(row, opt, estoqueId);
     const qtd = numBR(row.querySelector('.peca-qtd')?.value || 1) || 1;
     const venda = numBR(row.querySelector('.peca-venda')?.value || 0);
     const custo = numBR(row.querySelector('.peca-custo')?.value || 0);
@@ -3357,8 +3376,7 @@ window.gerarPDFOS = async function() {
     const opt = sel?.options?.[sel.selectedIndex];
     const estoqueId = sel?.value || '';
     const codigo = row.querySelector('.peca-codigo')?.value?.trim() || '';
-    const descLivre = row.querySelector('.peca-desc-livre')?.value?.trim();
-    const desc = descLivre || (estoqueId ? (opt?.dataset?.desc || opt?.text || '') : '');
+    const desc = descricaoPecaLinhaOS(row, opt, estoqueId);
     const qtd = numBR(row.querySelector('.peca-qtd')?.value || 0) || 1;
     const unit = numBR(row.querySelector('.peca-venda')?.value || 0);
     const final = +(qtd * unit * (1 - descPeca)).toFixed(2);
@@ -3390,7 +3408,9 @@ window.gerarPDFOS = async function() {
       } else {
         const tela = pecasTelaPorKeyPDF.get(it.key) || {};
         const codigoItem = it.codigo || tela.codigo || 'sem oem';
-        const descItem = it.desc || tela.desc || '-';
+        const descSalva = descricaoPecaGeradaSistemaOS(it.desc) ? '' : (it.desc || '');
+        const descTela = tela.desc || '';
+        const descItem = descTela || descSalva || '-';
         const qtdItem = it.qtd || tela.qtd || 1;
         const valorUnitItem = it.valorUnit || tela.valorUnit || 0;
         const valorFinalItem = it.valorFinal || tela.valorFinal || 0;
@@ -3561,7 +3581,9 @@ window.gerarPDFOS = async function() {
       head: [['Tipo', 'Código', 'Descrição', 'Valor original']],
       body: itensNaoAprovadosPDF.map(it => {
         const tela = it.tipo === 'peca' ? (pecasTelaPorKeyPDF.get(it.key) || {}) : {};
-        return [it.labelTipo || it.tipo, it.codigo || tela.codigo || '-', it.desc || tela.desc || '-', moedaPdf(it.valorFinal || tela.valorFinal || 0)];
+        const descSalva = it.tipo === 'peca' && descricaoPecaGeradaSistemaOS(it.desc) ? '' : (it.desc || '');
+        const descTela = tela.desc || '';
+        return [it.labelTipo || it.tipo, it.codigo || tela.codigo || '-', descTela || descSalva || '-', moedaPdf(it.valorFinal || tela.valorFinal || 0)];
       }),
       theme: 'grid',
       margin: { left: margem, right: margem },
@@ -4070,12 +4092,11 @@ window.pecasCotacaoDaTelaOS = function() {
     const opt = sel?.options?.[sel.selectedIndex];
     const estoqueId = sel?.value || '';
     const codigo = row.querySelector('.peca-codigo')?.value?.trim() || '';
-    const descLivre = row.querySelector('.peca-desc-livre')?.value?.trim() || '';
-    const desc = descLivre || (estoqueId ? (opt?.dataset?.desc || opt?.text || '') : '');
+    const desc = descricaoPecaLinhaOS(row, opt, estoqueId);
     const qtd = numBR(row.querySelector('.peca-qtd')?.value || 1) || 1;
     const unit = numBR(row.querySelector('.peca-venda')?.value || 0);
     if (!desc && !codigo && !unit && !estoqueId) return;
-    pecas.push({ key: 'peca-' + idx, tipo: 'peca', codigo, desc: desc || 'Peca', qtd, valorUnit: unit, valorFinal: qtd * unit, estoqueId });
+    pecas.push({ key: 'peca-' + idx, tipo: 'peca', codigo, desc, qtd, valorUnit: unit, valorFinal: qtd * unit, estoqueId });
   });
   document.querySelectorAll('#containerPecasOS .cilia-peca-wrap').forEach((wrap, idx) => {
     const row = wrap.querySelector('[data-cilia="1"], [data-peca-avulsa="1"]') || wrap;
@@ -4084,7 +4105,7 @@ window.pecasCotacaoDaTelaOS = function() {
     const qtd = numBR(row.querySelector('.peca-qtd')?.value || 1) || 1;
     const unit = numBR(row.querySelector('.peca-venda')?.value || 0);
     if (!desc && !codigo && !unit) return;
-    pecas.push({ key: 'peca-' + idx, tipo: 'peca', codigo, desc: desc || 'Peca Cilia', qtd, valorUnit: unit, valorFinal: qtd * unit, ciliaPieceIndex: wrap.dataset?.ciliaPieceIndex || '' });
+    pecas.push({ key: 'peca-' + idx, tipo: 'peca', codigo, desc, qtd, valorUnit: unit, valorFinal: qtd * unit, ciliaPieceIndex: wrap.dataset?.ciliaPieceIndex || '' });
   });
   return pecas;
 };
