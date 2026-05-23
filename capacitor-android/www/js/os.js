@@ -1835,6 +1835,7 @@ window.renderPecaOSRow = function(p) {
   const ehGov = typeof window._osClienteGovernamental === 'function' && window._osClienteGovernamental();
   const dadosGov = ehGov && typeof window._osDadosGovernamental === 'function' ? window._osDadosGovernamental() : null;
   const descPeca = dadosGov ? taxaDescontoOS(dadosGov.descPeca || 0) : 0;
+  const pecaManualSalva = p?.avulsa === true || (!p?.estoqueId && (p?.desc || p?.codigo));
 
   if (ehGov && p.codigo !== undefined) {
     // Peça avulsa (governo) — mostra código + desc + qtd + valor + badge desconto
@@ -1856,6 +1857,22 @@ window.renderPecaOSRow = function(p) {
       <input type="text" inputmode="decimal" class="j-input peca-venda" value="${vBruto.toFixed(2).replace('.', ',')}" placeholder="Valor unit. registrado" oninput="window.calcOSTotal()" title="Valor unitário da peça no orçamento">
       ${badgePeca}
       <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+    `;
+  } else if (pecaManualSalva) {
+    // Peça manual de cliente normal precisa reabrir como manual; se reabrir como
+    // select de estoque, a próxima mudança de status regrava a O.S. sem descrição.
+    const vBruto = numBR(p.venda || p.v || 0);
+    const custo = numBR(p.custo || p.c || 0);
+    const qtd = numBR(p.qtd || p.q || 1) || 1;
+    div.dataset.pecaAvulsa = '1';
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px 32px;gap:8px;align-items:center;background:rgba(255,165,0,0.06);padding:4px;border-radius:3px;border:1px solid rgba(255,165,0,0.25);';
+    div.innerHTML = `
+      <input type="hidden" class="peca-codigo" value="${escOS(p.codigo || '')}">
+      <input type="text" class="j-input peca-desc-livre" value="${escOS(p.desc || '')}" placeholder="DescriÃ§Ã£o da peÃ§a" oninput="window.calcOSTotal()" title="DescriÃ§Ã£o exata digitada na O.S.">
+      <input type="number" class="j-input peca-qtd" value="${qtd}" min="1" placeholder="Qtd" oninput="window.calcOSTotal()" title="Quantidade da peÃ§a no orÃ§amento">
+      <input type="text" inputmode="decimal" class="j-input peca-custo" value="${custo.toFixed(2).replace('.', ',')}" placeholder="Custo" oninput="window.calcOSTotal()" title="Custo unitÃ¡rio interno da peÃ§a">
+      <input type="text" inputmode="decimal" class="j-input peca-venda" value="${vBruto.toFixed(2).replace('.', ',')}" placeholder="Venda" oninput="window.calcOSTotal()" title="Valor unitÃ¡rio de venda/orÃ§amento da peÃ§a">
+      <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">âœ•</button>
     `;
   } else {
     // Cliente normal (estoque)
@@ -2756,11 +2773,18 @@ window.salvarOS = async function() {
         const valComPeca = totalPecas * (percPeca / 100);
         const valComTotal = valComServico + valComPeca;
 
-        if (valComTotal > 0) {
+        const comissaoJaLancadaOS = !!(osId && (window.J?.financeiro || []).some(f =>
+            f?.isComissao === true &&
+            f?.osId === osId &&
+            !financeiroOSCanceladoOS(f)
+        ));
+
+        if (valComTotal > 0 && osId && !comissaoJaLancadaOS) {
             db.collection('financeiro').add({
                 tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
                 desc: `Comissão (Serv: ${moeda(valComServico)} | Peça: ${moeda(valComPeca)}) — O.S. ${payload.placa || ''}`,
                 valor: valComTotal, pgto: 'A Combinar', venc: dataLocalISOOS(),
+                osId: osId,
                 createdAt: new Date().toISOString(), isComissao: true, mecId: payload.mecId, vinculo: `E_${payload.mecId}`
             });
         }
@@ -2773,7 +2797,24 @@ window.salvarOS = async function() {
   // independente de status, independente de mecânico atribuído.
   // Esta é a regra correta: "registrei o recebimento" = vai pro caixa.
   // ═══════════════════════════════════════════════════════════════════
-  if (payload.pgtoForma && payload.pgtoData) {
+  const recebimentosAtivosMesmoPlanoOS = osId ? (window.J?.financeiro || []).filter(f =>
+    f?.osId === osId &&
+    !financeiroOSCanceladoOS(f) &&
+    /^recebimento_os_/i.test(String(f.origem || ''))
+  ) : [];
+  const somaRecebimentosAtivosMesmoPlanoOS = +recebimentosAtivosMesmoPlanoOS.reduce((acc, f) => acc + numBR(f.valor || 0), 0).toFixed(2);
+  const totalPlanoFinanceiroOS = numBR(
+    (!isFirestoreSentinelOS(payload.totalAprovado) && payload.totalAprovado != null)
+      ? payload.totalAprovado
+      : (oldOSParaAprovacao.totalFaturado ?? oldOSParaAprovacao.totalAprovado ?? oldOSParaAprovacao.total ?? payload.total)
+  );
+  const financeiroAtivoMesmoPlanoOS = recebimentosAtivosMesmoPlanoOS.length > 0 &&
+    normalizarPagamentoOS(oldOSParaAprovacao.pgtoForma || '') === normalizarPagamentoOS(payload.pgtoForma || '') &&
+    String(oldOSParaAprovacao.pgtoData || '') === String(payload.pgtoData || '') &&
+    parcelasPagamentoOS(oldOSParaAprovacao.pgtoForma || '', oldOSParaAprovacao.pgtoParcelas || 1) === payload.pgtoParcelas &&
+    Math.abs(somaRecebimentosAtivosMesmoPlanoOS - totalPlanoFinanceiroOS) < 0.01;
+
+  if (payload.pgtoForma && payload.pgtoData && !financeiroAtivoMesmoPlanoOS) {
       // Conceitos:
       //  • formaRecebimento (como cliente pagou): Dinheiro, PIX, Débito,
       //    Crédito (1x / 2x / 3x...), Boleto, Crediário próprio
